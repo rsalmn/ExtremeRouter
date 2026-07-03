@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Dry run (skip actual publish)"
+        description: "Dry run (pack only, skip actual publish)"
         required: false
-        default: "false"
+        default: "true"
 
 permissions:
   contents: read
@@ -29,21 +29,17 @@ jobs:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
           cache: "npm"
-          cache-dependency-path: package-lock.json
 
-      - name: Install app dependencies (for build)
+      - name: Install app dependencies
         run: npm ci
-        working-directory: .
 
       - name: Build Next.js standalone (traced into CLI bundle)
         run: npm run build
-        working-directory: .
         env:
           NEXT_TRACING_ROOT_MODE: workspace
 
-      - name: Build & pack CLI
-        run: npm run pack:cli
-        working-directory: .
+      - name: Build CLI package (pack into root .tgz)
+        run: npm run cli:pack
         env:
           NEXT_TRACING_ROOT_MODE: workspace
 
@@ -55,20 +51,18 @@ jobs:
           echo "File: \`$TARFILE\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          npm view ./cli version || true
-          tar -tzf "$TARFILE" | head -30 >> $GITHUB_STEP_SUMMARY
+          tar -tzf "$TARFILE" | head -40 >> $GITHUB_STEP_SUMMARY
+          echo '...' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: Publish to npm
+      - name: Publish to npm (from tarball)
         if: ${{ github.event.inputs.dry_run != 'true' }}
-        run: npm publish --access public
-        working-directory: .
+        run: npm publish *.tgz --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish (dry run)
         if: ${{ github.event.inputs.dry_run == 'true' }}
-        run: npm publish --dry-run --access public
-        working-directory: .
+        run: npm publish *.tgz --dry-run --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
