@@ -242,7 +242,6 @@ export default function MediaProviderKindPage() {
           )
         }
       />
-      )}
 
       {supportsCombo && kindCombos.length > 0 && (
         <ComboList combos={kindCombos} />

@@ -252,7 +252,6 @@ export default function ComboDetailPage() {
         ]}
         actions={<Button variant="outline" size="sm" icon="delete" onClick={handleDelete}>Delete</Button>}
       />
-      />
 
       {/* Settings Card */}
       <Card>
