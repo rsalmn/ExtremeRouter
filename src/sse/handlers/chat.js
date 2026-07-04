@@ -13,13 +13,16 @@ import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
-import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
+import { handleComboChat, handleFusionChat, handleSwarmChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { recordBreakerSuccess, recordBreakerFailure, isRetryableFailure } from "open-sse/services/circuitBreaker.js";
+import { recordHealthSample } from "open-sse/services/healthMonitor.js";
+import { getApiKeyByKey } from "@/lib/localDb";
 
 /**
  * Handle chat completion request
@@ -85,6 +88,30 @@ export async function handleChat(request, clientRawRequest = null) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
+  // Per-Key Model Access Control: if the resolved API key has an allowedModels
+  // list, reject requests to models not in the list.
+  if (settings.requireApiKey && apiKey) {
+    try {
+      const keyObj = await getApiKeyByKey(apiKey);
+      if (keyObj && Array.isArray(keyObj.allowedModels) && keyObj.allowedModels.length > 0) {
+        const allowed = keyObj.allowedModels;
+        const requestedModel = modelStr.includes("/") ? modelStr : modelStr;
+        const isAllowed = allowed.some((m) => {
+          if (m === requestedModel) return true;
+          // Allow prefix match for combo names (e.g. "glm/" matches "glm/glm-5")
+          if (m.endsWith("/") && requestedModel.startsWith(m)) return true;
+          return false;
+        });
+        if (!isAllowed) {
+          log.warn("AUTH", `Model "${modelStr}" not allowed for key "${keyObj.name || keyObj.id}"`);
+          return errorResponse(HTTP_STATUS.FORBIDDEN, `Model "${modelStr}" is not allowed for this API key`);
+        }
+      }
+    } catch (aclErr) {
+      log.warn("AUTH", `ACL check error: ${aclErr?.message || aclErr}`);
+    }
+  }
+
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
   const userAgent = request?.headers?.get("user-agent") || "";
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
@@ -118,7 +145,32 @@ export async function handleChat(request, clientRawRequest = null) {
       });
     }
 
-    const comboStickyLimit = settings.comboStickyRoundRobinLimit;
+    const comboStickyLimit = settings.comboStickyLimit;
+    if (comboStrategy === "swarm") {
+      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: swarm)`);
+      const swarmCfg = comboStrategies[modelStr] || {};
+      return handleSwarmChat({
+        body,
+        models: comboModels,
+        handleSingleModel: (b, m, isPanel) => {
+          let cleanRawReq = clientRawRequest;
+          if (isPanel && clientRawRequest) {
+            const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
+            cleanRawReq = { ...clientRawRequest, body: cleanBody };
+          }
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+        },
+        log,
+        comboName: modelStr,
+        managerModel: swarmCfg.managerModel,
+        staffModel: swarmCfg.staffModel,
+        auditModel: swarmCfg.auditModel,
+        workerCount: swarmCfg.workerCount,
+        swarmTuning: swarmCfg.swarmTuning,
+        telemetry: swarmCfg.enableTelemetry !== false,
+      });
+    }
+
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
@@ -172,6 +224,31 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
 
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
+      if (comboStrategy === "swarm") {
+        log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: swarm)`);
+        const swarmCfg = comboStrategies[modelStr] || {};
+        return handleSwarmChat({
+          body,
+          models: comboModels,
+          handleSingleModel: (b, m, isPanel) => {
+            let cleanRawReq = clientRawRequest;
+            if (isPanel && clientRawRequest) {
+              const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
+              cleanRawReq = { ...clientRawRequest, body: cleanBody };
+            }
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          },
+          log,
+          comboName: modelStr,
+          managerModel: swarmCfg.managerModel,
+          staffModel: swarmCfg.staffModel,
+          auditModel: swarmCfg.auditModel,
+          workerCount: swarmCfg.workerCount,
+          swarmTuning: swarmCfg.swarmTuning,
+          telemetry: swarmCfg.enableTelemetry !== false,
+        });
+      }
+
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
         body,
@@ -241,6 +318,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    const attemptStart = Date.now();
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -274,10 +352,22 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      const latencyMs = Date.now() - attemptStart;
+      recordBreakerSuccess(provider, chatSettings);
+      recordHealthSample(provider, { success: true, latencyMs }, chatSettings);
+      return result.response;
+    }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+
+    // Record health + circuit breaker for retryable failures only.
+    const latencyMs = Date.now() - attemptStart;
+    recordHealthSample(provider, { success: false, latencyMs, status: result.status }, chatSettings);
+    if (isRetryableFailure(result.status)) {
+      recordBreakerFailure(provider, result.status, chatSettings);
+    }
 
     if (shouldFallback) {
       log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);

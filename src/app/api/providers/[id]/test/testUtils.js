@@ -1,4 +1,5 @@
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { createHash } from "node:crypto";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
@@ -672,6 +673,38 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid SSO cookie" };
       }
+      case "chatglm-cn": {
+        // Extract refresh token from full cookies or accept a bare token.
+        let refreshToken = connection.apiKey;
+        const m = connection.apiKey.match(/chatglm_refresh_token=([^;]+)/);
+        if (m) refreshToken = m[1].trim();
+        // Sign the refresh probe the way the web client does.
+        const now = String(Date.now());
+        const digits = [...now].map(Number);
+        const checksum = (digits.reduce((a, b) => a + b, 0) - digits[digits.length - 2]) % 10;
+        const timestamp = now.slice(0, -2) + String(checksum) + now.slice(-1);
+        const nonce = crypto.randomUUID().replace(/-/g, "");
+        const sign = createHash("md5").update(`${timestamp}-${nonce}-8a1317a7468aa3ad86e997d08f3f31cb`, "utf8").digest("hex");
+        const res = await fetchWithConnectionProxy("https://chatglm.cn/chatglm/user-api/user/refresh", {
+          method: "POST",
+          headers: {
+            Accept: "application/json, text/plain, */*",
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${refreshToken}`,
+            Origin: "https://chatglm.cn",
+            "X-App-Fr": "default",
+            "X-App-Platform": "pc",
+            "X-Device-Id": crypto.randomUUID().replace(/-/g, ""),
+            "X-Nonce": nonce,
+            "X-Request-Id": crypto.randomUUID().replace(/-/g, ""),
+            "X-Sign": sign,
+            "X-Timestamp": timestamp,
+          },
+          body: "{}",
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired chatglm.cn refresh token — re-copy your cookies." };
+      }
       case "perplexity-web": {
         let sessionToken = connection.apiKey;
         if (sessionToken.startsWith("__Secure-next-auth.session-token=")) sessionToken = sessionToken.slice("__Secure-next-auth.session-token=".length);
@@ -710,6 +743,240 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           headers: { Authorization: `Bearer ${connection.apiKey}` },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "deepseek-web": {
+        let userToken = connection.apiKey;
+        try { const p = JSON.parse(connection.apiKey); if (typeof p?.value === "string") userToken = p.value; } catch { /* bare */ }
+        const res = await fetchWithConnectionProxy("https://chat.deepseek.com/api/v0/users/current", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${userToken}`,
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+            Origin: "https://chat.deepseek.com", Referer: "https://chat.deepseek.com/",
+            "X-App-Version": "20241129.1", "X-Client-Platform": "web", "X-Client-Version": "1.8.0",
+          },
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired userToken" };
+      }
+      case "qwen-web": {
+        let token = connection.apiKey;
+        const tMatch = connection.apiKey.match(/(?:^|;\s*)token=([^;\s]+)/);
+        if (tMatch) token = tMatch[1];
+        else if (connection.apiKey.includes("=")) token = "";
+        if (!token && connection.apiKey.includes("=")) return { valid: false, error: "No 'token' cookie found — copy the full Cookie header from chat.qwen.ai" };
+        const res = await fetchWithConnectionProxy("https://chat.qwen.ai/api/v2/chats/new", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json", Authorization: `Bearer ${token}`,
+            Cookie: connection.apiKey.startsWith("Cookie:") ? connection.apiKey.slice(7).trim() : connection.apiKey,
+            "bx-v": "2.5.36", source: "web", version: "0.2.66", "x-request-id": crypto.randomUUID(),
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            Origin: "https://chat.qwen.ai", Referer: "https://chat.qwen.ai/",
+          },
+          body: JSON.stringify({ title: "New Chat", models: ["qwen3.7-max"], chat_mode: "normal", chat_type: "t2t", timestamp: Date.now() }),
+        }, effectiveProxy);
+        const ct = res.headers.get("content-type") || "";
+        const valid = res.status !== 401 && res.status !== 403 && !ct.includes("text/html");
+        return { valid, error: valid ? null : "Qwen WAF rejected the cookies — re-copy the FULL cookie string from chat.qwen.ai" };
+      }
+      case "kimi-web": {
+        let jwt = connection.apiKey.replace(/^Cookie:\s*/i, "").replace(/^bearer\s+/i, "");
+        const m = jwt.match(/(?:^|[\s;])kimi-auth=([^;\s]+)/);
+        if (m) jwt = m[1];
+        const res = await fetchWithConnectionProxy("https://www.kimi.com/api/auth/session", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${jwt}`, Cookie: `kimi-auth=${jwt}`,
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            Referer: "https://www.kimi.com/", Origin: "https://www.kimi.com",
+          },
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired kimi-auth token" };
+      }
+      case "blackbox-web": {
+        let cookieHeader = connection.apiKey.replace(/^Cookie:\s*/i, "");
+        if (!cookieHeader.includes("=")) cookieHeader = `next-auth.session-token=${cookieHeader}`;
+        const res = await fetchWithConnectionProxy("https://app.blackbox.ai/api/auth/session", {
+          method: "GET",
+          headers: { Accept: "application/json", Cookie: cookieHeader, "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+        }, effectiveProxy);
+        if (!res.ok) return { valid: false, error: "Invalid or expired session cookie" };
+        const data = await res.json().catch(() => null);
+        const valid = !!(data && data.user && data.user.email);
+        return { valid, error: valid ? null : "Session cookie accepted but no user — cookie may be expired" };
+      }
+      case "t3-web": {
+        const res = await fetchWithConnectionProxy("https://t3.chat/api/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json", Cookie: connection.apiKey.replace(/^Cookie:\s*/i, ""),
+            Accept: "application/json",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            Referer: "https://t3.chat/", Origin: "https://t3.chat",
+          },
+          body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "user", content: "hi" }], stream: false }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Session expired — re-paste t3.chat cookies (incl. convex-session-id)" };
+      }
+      case "duckduckgo-web": {
+        const res = await fetchWithConnectionProxy("https://duckduckgo.com/duckchat/v1/status", {
+          method: "GET",
+          headers: { "x-vqd-accept": "1", "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+        }, effectiveProxy);
+        const valid = res.status !== 403 && res.status < 500;
+        return { valid, error: valid ? null : "DuckDuckGo AI Chat is currently blocking requests" };
+      }
+      case "venice-web": {
+        const res = await fetchWithConnectionProxy("https://venice.ai/api/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json", Accept: "application/json",
+            Cookie: connection.apiKey.replace(/^Cookie:\s*/i, ""),
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            Referer: "https://venice.ai/", Origin: "https://venice.ai",
+          },
+          body: JSON.stringify({ messages: [{ role: "user", content: "hi" }], model: "llama-3.1-405b", stream: false, max_tokens: 1 }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired venice.ai session cookie" };
+      }
+      case "doubao-web": {
+        const res = await fetchWithConnectionProxy("https://www.doubao.com/samantha/contact/list", {
+          method: "GET",
+          headers: {
+            Cookie: connection.apiKey.replace(/^Cookie:\s*/i, ""),
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            Referer: "https://www.doubao.com/",
+          },
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired doubao.com session cookie" };
+      }
+      case "v0-vercel-web": {
+        const res = await fetchWithConnectionProxy("https://v0.dev/api/auth/session", {
+          method: "GET",
+          headers: { Cookie: connection.apiKey.replace(/^Cookie:\s*/i, ""), "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired v0.dev session cookie" };
+      }
+      case "poe-web": {
+        let pb = connection.apiKey.replace(/^Cookie:\s*/i, "");
+        const pm = pb.match(/p-b=([^;]+)/);
+        if (pm) pb = pm[1];
+        const res = await fetchWithConnectionProxy("https://www.poe.com/api/gql_POST", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json", Accept: "application/json", Cookie: `p-b=${pb}`,
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            Referer: "https://www.poe.com/", Origin: "https://www.poe.com",
+          },
+          body: JSON.stringify({ operationName: "ChatViewQuery", query: "query ChatViewQuery { viewer { id } }", variables: {} }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired p-b cookie" };
+      }
+      case "copilot-web": {
+        let token = connection.apiKey.trim();
+        const am = token.match(/access_token=([^;]+)/); if (am) token = am[1];
+        const bm = token.match(/[Bb]earer\s+(.+)/); if (bm) token = bm[1].trim();
+        const res = await fetchWithConnectionProxy("https://copilot.microsoft.com/c/api/start", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Edg/136.0.0.0",
+            Origin: "https://copilot.microsoft.com", Referer: "https://copilot.microsoft.com/",
+          },
+          body: JSON.stringify({ timeZone: "America/New_York", startNewConversation: true }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired Copilot access token" };
+      }
+      case "muse-spark-web": {
+        let cookie = connection.apiKey.replace(/^Cookie:\s*/i, "").replace(/^bearer\s+/i, "");
+        if (!cookie.includes("=")) cookie = `ecto_1_sess=${cookie}`;
+        const res = await fetchWithConnectionProxy("https://www.meta.ai/api/graphql/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json", Cookie: cookie,
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            Origin: "https://www.meta.ai", Referer: "https://www.meta.ai/",
+          },
+          body: JSON.stringify({ query: "{ viewer { id } }" }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired ecto_1_sess cookie" };
+      }
+      case "adapta-web": {
+        let jwt = connection.apiKey.trim();
+        if (jwt.includes("=") && !jwt.startsWith("eyJ")) jwt = jwt.slice(jwt.indexOf("=") + 1).trim();
+        const res = await fetchWithConnectionProxy("https://clerk.agent.adapta.one/v1/client", {
+          method: "GET",
+          headers: { Cookie: `__client=${jwt}`, "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36", Origin: "https://agent.adapta.one" },
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired __client cookie" };
+      }
+      case "veoaifree-web": {
+        const res = await fetchWithConnectionProxy("https://veoaifree.com", {
+          method: "GET",
+          headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "veoaifree.com is unreachable or rate-limited" };
+      }
+      case "claude-web": {
+        let cookie = connection.apiKey.replace(/^cookie\s*:\s*/i, "");
+        if (!/sessionKey\s*=/.test(cookie) && !cookie.includes("=")) cookie = `sessionKey=${cookie}`;
+        const res = await fetchWithConnectionProxy("https://claude.ai/api/organizations", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json", Cookie: cookie, "anthropic-client-platform": "web_claude_ai",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            Origin: "https://claude.ai", Referer: "https://claude.ai/",
+          },
+        }, effectiveProxy);
+        if (res.status === 401) return { valid: false, error: "Invalid or expired sessionKey" };
+        if (res.status === 403) return { valid: true, error: "Cloudflare blocked the probe (HTTP 403) — cookie may still be valid but chat may be blocked without TLS impersonation" };
+        return { valid: true, error: null };
+      }
+      case "chatgpt-web": {
+        let cookie = connection.apiKey.replace(/^cookie\s*:\s*/i, "");
+        if (!/__Secure-next-auth\.session-token\s*=/.test(cookie) && !cookie.includes("=")) {
+          cookie = `__Secure-next-auth.session-token=${cookie}`;
+        }
+        const res = await fetchWithConnectionProxy("https://chatgpt.com/api/auth/session", {
+          method: "GET",
+          headers: { Accept: "application/json", Cookie: cookie, "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+        }, effectiveProxy);
+        if (res.status === 401 || res.status === 403) return { valid: false, error: "Invalid or expired session cookie" };
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          const valid = !!(data && data.accessToken);
+          return { valid, error: valid ? null : "Session cookie accepted but no accessToken — cookie likely expired" };
+        }
+        return { valid: true, error: null };
+      }
+      case "gemini-web": {
+        if (!/__Secure-1PSID\s*=/.test(connection.apiKey) || !/__Secure-1PSIDTS\s*=/.test(connection.apiKey)) {
+          return { valid: false, error: "Missing required Google cookies — copy the FULL cookie string (must include __Secure-1PSID and __Secure-1PSIDTS)" };
+        }
+        const cookie = connection.apiKey.replace(/^cookie\s*:\s*/i, "");
+        const res = await fetchWithConnectionProxy("https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded;charset=utf-8", Accept: "*/*", Cookie: cookie,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            Origin: "https://gemini.google.com", Referer: "https://gemini.google.com/app/",
+          },
+          body: new URLSearchParams({ "f.req": JSON.stringify([null, "[\"hi\"]"]), at: "" }).toString(),
+        }, effectiveProxy);
+        if (res.status === 401) return { valid: false, error: "Invalid Google cookies" };
+        if (res.status === 403) return { valid: true, error: "Google blocked the probe (HTTP 403) — cookies may still be valid; Gemini requires a real browser fingerprint" };
+        return { valid: true, error: null };
       }
       default:
         return { valid: false, error: "Provider test not supported" };

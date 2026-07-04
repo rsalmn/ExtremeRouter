@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
@@ -542,6 +543,59 @@ export async function POST(request) {
           break;
         }
 
+        case "chatglm-cn": {
+          // Extract the refresh token from a full cookie string, or accept a bare token.
+          let refreshToken = apiKey;
+          const refreshMatch = apiKey.match(/chatglm_refresh_token=([^;]+)/);
+          if (refreshMatch) refreshToken = refreshMatch[1].trim();
+          else if (apiKey.includes("=") || apiKey.includes(";")) {
+            // Looks like cookies but no refresh token found.
+            isValid = false;
+            error = "No chatglm_refresh_token found in the pasted cookies. Copy the full cookie string from chatglm.cn DevTools.";
+            break;
+          }
+          // Validate by attempting a token refresh. A valid refresh token → access_token.
+          const now = String(Date.now());
+          const digits = [...now].map(Number);
+          const checksum = (digits.reduce((a, b) => a + b, 0) - digits[digits.length - 2]) % 10;
+          const timestamp = now.slice(0, -2) + String(checksum) + now.slice(-1);
+          const nonce = crypto.randomUUID().replace(/-/g, "");
+          const sign = createHash("md5").update(`${timestamp}-${nonce}-8a1317a7468aa3ad86e997d08f3f31cb`, "utf8").digest("hex");
+          const probeRes = await fetch("https://chatglm.cn/chatglm/user-api/user/refresh", {
+            method: "POST",
+            headers: {
+              Accept: "application/json, text/plain, */*",
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${refreshToken}`,
+              Origin: "https://chatglm.cn",
+              "X-App-Fr": "default",
+              "X-App-Platform": "pc",
+              "X-Device-Id": crypto.randomUUID().replace(/-/g, ""),
+              "X-Nonce": nonce,
+              "X-Request-Id": crypto.randomUUID().replace(/-/g, ""),
+              "X-Sign": sign,
+              "X-Timestamp": timestamp,
+            },
+            body: "{}",
+          });
+          if (probeRes.status === 401 || probeRes.status === 403) {
+            isValid = false;
+            error = "Refresh token rejected by chatglm.cn — it may be expired. Re-copy cookies from chatglm.cn.";
+          } else if (probeRes.ok) {
+            try {
+              const payload = await probeRes.json();
+              const accessToken = payload?.result?.access_token;
+              isValid = !!accessToken;
+              if (!isValid) error = "chatglm.cn accepted the token but returned no access_token.";
+            } catch {
+              isValid = true; // Server accepted it; assume valid even if JSON parse fails.
+            }
+          } else {
+            isValid = true; // 429/5xx etc. mean the token itself was accepted.
+          }
+          break;
+        }
+
         case "perplexity-web": {
           let sessionToken = apiKey;
           if (sessionToken.startsWith("__Secure-next-auth.session-token=")) {
@@ -574,6 +628,418 @@ export async function POST(request) {
           if (res.status === 401 || res.status === 403) {
             isValid = false;
             error = "Invalid session cookie — re-paste __Secure-next-auth.session-token from perplexity.ai";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "deepseek-web": {
+          // userToken from DeepSeek localStorage (JSON-wrapped {"value":"..."} or bare).
+          let userToken = apiKey;
+          try { const p = JSON.parse(apiKey); if (typeof p?.value === "string") userToken = p.value; } catch { /* bare */ }
+          const res = await fetch("https://chat.deepseek.com/api/v0/users/current", {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${userToken}`,
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+              Origin: "https://chat.deepseek.com",
+              Referer: "https://chat.deepseek.com/",
+              "X-App-Version": "20241129.1",
+              "X-Client-Platform": "web",
+              "X-Client-Version": "1.8.0",
+            },
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired userToken — re-copy from DeepSeek localStorage (chat.deepseek.com).";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "qwen-web": {
+          // Requires the FULL cookie jar from chat.qwen.ai (cna, ssxmod_itna, token=...).
+          let token = apiKey;
+          const tMatch = apiKey.match(/(?:^|;\s*)token=([^;\s]+)/);
+          if (tMatch) token = tMatch[1];
+          else if (apiKey.includes("=") || apiKey.includes(";")) token = ""; // cookies present but no token
+          if (!token && (apiKey.includes("=") || apiKey.includes(";"))) {
+            isValid = false;
+            error = "No 'token' cookie found — copy the full Cookie header from chat.qwen.ai (must include token, cna, ssxmod_itna).";
+            break;
+          }
+          const res = await fetch("https://chat.qwen.ai/api/v2/chats/new", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+              Cookie: apiKey.startsWith("Cookie:") ? apiKey.slice(7).trim() : apiKey,
+              "bx-v": "2.5.36",
+              source: "web",
+              version: "0.2.66",
+              "x-request-id": crypto.randomUUID(),
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+              Origin: "https://chat.qwen.ai",
+              Referer: "https://chat.qwen.ai/",
+            },
+            body: JSON.stringify({ title: "New Chat", models: ["qwen3.7-max"], chat_mode: "normal", chat_type: "t2t", timestamp: Date.now() }),
+          });
+          const ct = res.headers.get("content-type") || "";
+          if (res.status === 401 || res.status === 403 || ct.includes("text/html")) {
+            isValid = false;
+            error = "Qwen WAF rejected the cookies — re-copy the FULL cookie string from chat.qwen.ai (cna, ssxmod_itna, token all required).";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "kimi-web": {
+          // kimi-auth JWT (bare eyJ..., or from kimi-auth= cookie pair).
+          let jwt = apiKey.replace(/^Cookie:\s*/i, "").replace(/^bearer\s+/i, "");
+          const m = jwt.match(/(?:^|[\s;])kimi-auth=([^;\s]+)/);
+          if (m) jwt = m[1];
+          const res = await fetch("https://www.kimi.com/api/auth/session", {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${jwt}`,
+              Cookie: `kimi-auth=${jwt}`,
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+              Referer: "https://www.kimi.com/",
+              Origin: "https://www.kimi.com",
+            },
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired kimi-auth token — re-copy from www.kimi.com cookies.";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "blackbox-web": {
+          // next-auth.session-token cookie (bare value or full cookie string).
+          let cookieHeader = apiKey.replace(/^Cookie:\s*/i, "");
+          if (!cookieHeader.includes("=")) cookieHeader = `next-auth.session-token=${cookieHeader}`;
+          const res = await fetch("https://app.blackbox.ai/api/auth/session", {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+              Cookie: cookieHeader,
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            },
+          });
+          if (!res.ok) {
+            isValid = false;
+            error = "Invalid or expired session cookie — re-copy from app.blackbox.ai cookies.";
+          } else {
+            try {
+              const data = await res.json();
+              isValid = !!(data && data.user && data.user.email);
+              if (!isValid) error = "Session cookie accepted but no user — cookie may be expired. Re-copy from app.blackbox.ai.";
+            } catch {
+              isValid = true;
+            }
+          }
+          break;
+        }
+
+        case "t3-web": {
+          // Cookie header incl. convex-session-id. Minimal chat probe.
+          const res = await fetch("https://t3.chat/api/chat", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Cookie: apiKey.replace(/^Cookie:\s*/i, ""),
+              Accept: "application/json",
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+              Referer: "https://t3.chat/",
+              Origin: "https://t3.chat",
+            },
+            body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "user", content: "hi" }], stream: false }),
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Session expired or unauthorized — re-paste your t3.chat cookies (must include convex-session-id).";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "duckduckgo-web": {
+          // Anonymous — validate reachability only (no user credential).
+          const res = await fetch("https://duckduckgo.com/duckchat/v1/status", {
+            method: "GET",
+            headers: { "x-vqd-accept": "1", "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+          });
+          isValid = res.status !== 403 && res.status < 500;
+          if (!isValid) error = "DuckDuckGo AI Chat is currently blocking requests — try again later.";
+          break;
+        }
+
+        case "venice-web": {
+          const cookie = apiKey.replace(/^Cookie:\s*/i, "");
+          const res = await fetch("https://venice.ai/api/chat", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              Cookie: cookie,
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+              Referer: "https://venice.ai/",
+              Origin: "https://venice.ai",
+            },
+            body: JSON.stringify({ messages: [{ role: "user", content: "hi" }], model: "llama-3.1-405b", stream: false, max_tokens: 1 }),
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired venice.ai session cookie — re-copy from venice.ai cookies.";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "doubao-web": {
+          const cookie = apiKey.replace(/^Cookie:\s*/i, "");
+          const res = await fetch("https://www.doubao.com/samantha/contact/list", {
+            method: "GET",
+            headers: {
+              Cookie: cookie,
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+              Referer: "https://www.doubao.com/",
+            },
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired doubao.com session cookie — re-copy from doubao.com cookies.";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "v0-vercel-web": {
+          const cookie = apiKey.replace(/^Cookie:\s*/i, "");
+          const res = await fetch("https://v0.dev/api/auth/session", {
+            method: "GET",
+            headers: {
+              Cookie: cookie,
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            },
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired v0.dev session cookie — re-copy from v0.dev cookies.";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "poe-web": {
+          // p-b cookie (bare value or full cookie string).
+          let pb = apiKey.replace(/^Cookie:\s*/i, "");
+          const pm = pb.match(/p-b=([^;]+)/);
+          if (pm) pb = pm[1];
+          const res = await fetch("https://www.poe.com/api/gql_POST", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              Cookie: `p-b=${pb}`,
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+              Referer: "https://www.poe.com/",
+              Origin: "https://www.poe.com",
+            },
+            body: JSON.stringify({
+              operationName: "ChatViewQuery",
+              query: "query ChatViewQuery { viewer { id } }",
+              variables: {},
+            }),
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired p-b cookie — re-copy from poe.com cookies.";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "copilot-web": {
+          // Microsoft access JWT (bare eyJ..., access_token=..., or Bearer ...).
+          let token = apiKey.trim();
+          const am = token.match(/access_token=([^;]+)/); if (am) token = am[1];
+          const bm = token.match(/[Bb]earer\s+(.+)/); if (bm) token = bm[1].trim();
+          const res = await fetch("https://copilot.microsoft.com/c/api/start", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: token ? `Bearer ${token}` : undefined,
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Edg/136.0.0.0",
+              Origin: "https://copilot.microsoft.com",
+              Referer: "https://copilot.microsoft.com/",
+            },
+            body: JSON.stringify({ timeZone: "America/New_York", startNewConversation: true }),
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired Copilot access token — re-copy from copilot.microsoft.com.";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "muse-spark-web": {
+          // ecto_1_sess cookie (bare value or full cookie string).
+          let cookie = apiKey.replace(/^Cookie:\s*/i, "").replace(/^bearer\s+/i, "");
+          if (!cookie.includes("=")) cookie = `ecto_1_sess=${cookie}`;
+          const res = await fetch("https://www.meta.ai/api/graphql/", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Cookie: cookie,
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+              Origin: "https://www.meta.ai",
+              Referer: "https://www.meta.ai/",
+            },
+            body: JSON.stringify({ query: "{ viewer { id } }" }),
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired ecto_1_sess cookie — re-copy from meta.ai cookies.";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "adapta-web": {
+          // Clerk __client JWT (bare eyJ... or __client=... pair).
+          let jwt = apiKey.trim();
+          if (jwt.includes("=") && !jwt.startsWith("eyJ")) {
+            jwt = jwt.slice(jwt.indexOf("=") + 1).trim();
+          }
+          const res = await fetch("https://clerk.agent.adapta.one/v1/client", {
+            method: "GET",
+            headers: {
+              Cookie: `__client=${jwt}`,
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+              Origin: "https://agent.adapta.one",
+            },
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired __client cookie — re-copy from agent.adapta.one cookies.";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "veoaifree-web": {
+          // No auth — validate reachability (nonce scrape).
+          const res = await fetch("https://veoaifree.com", {
+            method: "GET",
+            headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+          });
+          isValid = res.ok;
+          if (!isValid) error = "veoaifree.com is unreachable or rate-limited.";
+          break;
+        }
+
+        case "claude-web": {
+          // sessionKey cookie (bare value or full cookie string).
+          let cookie = apiKey.replace(/^cookie\s*:\s*/i, "");
+          if (!/sessionKey\s*=/.test(cookie) && !cookie.includes("=")) cookie = `sessionKey=${cookie}`;
+          const res = await fetch("https://claude.ai/api/organizations", {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Cookie: cookie,
+              "anthropic-client-platform": "web_claude_ai",
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+              Origin: "https://claude.ai",
+              Referer: "https://claude.ai/",
+            },
+          });
+          if (res.status === 401) {
+            isValid = false;
+            error = "Invalid or expired sessionKey — re-copy from claude.ai cookies.";
+          } else if (res.status === 403) {
+            // Cloudflare block — cookie may still be valid; surface as ambiguous.
+            isValid = true;
+            error = "Note: Cloudflare blocked the probe (HTTP 403). Your cookie may still be valid — chat requests may also be blocked without TLS impersonation.";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "chatgpt-web": {
+          // __Secure-next-auth.session-token (bare value or full cookie string).
+          let cookie = apiKey.replace(/^cookie\s*:\s*/i, "");
+          if (!/__Secure-next-auth\.session-token\s*=/.test(cookie) && !cookie.includes("=")) {
+            cookie = `__Secure-next-auth.session-token=${cookie}`;
+          }
+          const res = await fetch("https://chatgpt.com/api/auth/session", {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+              Cookie: cookie,
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            },
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired session cookie — re-copy __Secure-next-auth.session-token from chatgpt.com cookies.";
+          } else if (res.ok) {
+            try {
+              const data = await res.json();
+              isValid = !!(data && data.accessToken);
+              if (!isValid) error = "Session cookie accepted but no accessToken returned — cookie likely expired. Re-copy from chatgpt.com.";
+            } catch {
+              isValid = true;
+            }
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
+        case "gemini-web": {
+          // Requires __Secure-1PSID AND __Secure-1PSIDTS cookies.
+          if (!/__Secure-1PSID\s*=/.test(apiKey) || !/__Secure-1PSIDTS\s*=/.test(apiKey)) {
+            isValid = false;
+            error = "Missing required Google cookies — copy the FULL cookie string from gemini.google.com (must include __Secure-1PSID and __Secure-1PSIDTS).";
+            break;
+          }
+          const cookie = apiKey.replace(/^cookie\s*:\s*/i, "");
+          const res = await fetch("https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+              Accept: "*/*",
+              Cookie: cookie,
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+              Origin: "https://gemini.google.com",
+              Referer: "https://gemini.google.com/app/",
+            },
+            body: new URLSearchParams({ "f.req": JSON.stringify([null, "[\"hi\"]"]), at: "" }).toString(),
+          });
+          if (res.status === 401) {
+            isValid = false;
+            error = "Invalid Google cookies — re-copy from gemini.google.com.";
+          } else if (res.status === 403) {
+            // Google anti-bot — cookie may still be valid.
+            isValid = true;
+            error = "Note: Google blocked the probe (HTTP 403). Your cookies may still be valid — Gemini requires a real browser fingerprint to chat.";
           } else {
             isValid = true;
           }

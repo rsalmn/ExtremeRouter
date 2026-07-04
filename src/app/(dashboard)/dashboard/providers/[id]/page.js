@@ -56,6 +56,8 @@ export default function ProviderDetailPage() {
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
+  const [modelSearchQuery, setModelSearchQuery] = useState("");
+  const [testingAllModels, setTestingAllModels] = useState(false);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
@@ -1004,6 +1006,15 @@ export default function ProviderDetailPage() {
     }
   };
 
+  // Test every visible model concurrently. Each result populates modelTestResults independently.
+  const handleTestAllModels = async (modelIds) => {
+    if (testingAllModels || modelIds.length === 0) return;
+    setTestingAllModels(true);
+    setModelsTestError("");
+    await Promise.all(modelIds.map((id) => handleTestModel(id)));
+    setTestingAllModels(false);
+  };
+
   const renderModelsSection = () => {
     if (isCompatible) {
       return (
@@ -1040,10 +1051,17 @@ export default function ProviderDetailPage() {
       type: "llm",
     });
 
+    // Apply the search filter (match against model id, name, and full alias path).
+    const q = modelSearchQuery.trim().toLowerCase();
+    const matchesSearch = (id, name = "") =>
+      !q || id.toLowerCase().includes(q) || String(name).toLowerCase().includes(q);
+    const filteredDisplayModels = displayModels.filter((m) => matchesSearch(m.id, m.name));
+    const filteredCustomModelRows = customModelRows.filter((m) => matchesSearch(m.id, m.name));
+
     return (
       <div className="flex flex-wrap gap-3">
         {/* Custom models first */}
-        {customModelRows.map((model) => (
+        {filteredCustomModelRows.map((model) => (
           <ModelRow
             key={`${model.source}-${model.fullModel}`}
             model={{ id: model.id, name: model.name }}
@@ -1068,7 +1086,7 @@ export default function ProviderDetailPage() {
           />
         ))}
 
-        {displayModels.map((model) => {
+        {filteredDisplayModels.map((model) => {
           const fullModel = `${providerStorageAlias}/${model.id}`;
           const oldFormatModel = `${providerId}/${model.id}`;
           const existingAlias = Object.entries(modelAliases).find(
@@ -1093,6 +1111,13 @@ export default function ProviderDetailPage() {
             />
           );
         })}
+
+        {/* No search results */}
+        {modelSearchQuery.trim() && filteredDisplayModels.length === 0 && filteredCustomModelRows.length === 0 && (
+          <p className="w-full text-center text-sm text-text-muted py-4">
+            No models match &ldquo;{modelSearchQuery}&rdquo;
+          </p>
+        )}
 
         {/* Add model button — inline, same style as model chips */}
         <button
@@ -1579,31 +1604,59 @@ export default function ProviderDetailPage() {
 
       {/* Models */}
       <Card>
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-semibold">
-            {"Available Models"}
-          </h2>
-          {!isCompatible && (() => {
-            const allIds = [
-              ...models,
-              ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
-            const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
-            return (
-              <div className="flex gap-2">
-                {disabledModelIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
-                    Active All
-                  </Button>
-                )}
-                {activeIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="block" onClick={() => handleDisableAll(activeIds)}>
-                    Disable All
-                  </Button>
-                )}
-              </div>
-            );
-          })()}
+        <div className="mb-4 flex flex-col gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-lg font-semibold">
+              {"Available Models"}
+            </h2>
+            {!isCompatible && (() => {
+              const allIds = [
+                ...models,
+                ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+              ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
+              const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
+              // Models visible after search filter — used to scope "Test All".
+              const q = modelSearchQuery.trim().toLowerCase();
+              const testableIds = activeIds.filter((id) =>
+                !q || id.toLowerCase().includes(q)
+              );
+              return (
+                <div className="flex flex-wrap gap-2">
+                  {disabledModelIds.length > 0 && (
+                    <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
+                      Active All
+                    </Button>
+                  )}
+                  {activeIds.length > 0 && (
+                    <Button size="sm" variant="secondary" icon="block" onClick={() => handleDisableAll(activeIds)}>
+                      Disable All
+                    </Button>
+                  )}
+                  {(connections.length > 0 || isFreeNoAuth) && testableIds.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      icon={testingAllModels ? "progress_activity" : "play_arrow"}
+                      onClick={() => handleTestAllModels(testableIds)}
+                      disabled={testingAllModels}
+                    >
+                      {testingAllModels ? "Testing..." : `Test All (${testableIds.length})`}
+                    </Button>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+          {/* Search box — applies to both built-in and custom model rows */}
+          <div className="sm:max-w-xs">
+            <Input
+              type="search"
+              placeholder="Search models..."
+              value={modelSearchQuery}
+              onChange={(e) => setModelSearchQuery(e.target.value)}
+              className="w-full"
+            />
+          </div>
         </div>
         {!!modelsTestError && (
           <p className="text-xs text-danger mb-3 break-words">{modelsTestError}</p>

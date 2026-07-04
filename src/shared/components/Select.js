@@ -30,7 +30,8 @@ export default function Select({
           onChange={onChange}
           disabled={disabled}
           className={cn(
-            "w-full rounded-brand border border-border bg-surface-2 py-2 pl-3 pr-10 text-sm text-text-main",
+            "w-full appearance-none rounded-brand border border-border bg-surface-2 py-2 pl-3 pr-10 text-sm text-text-main",
+            "[-webkit-appearance:none] [-moz-appearance:none]",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
             "transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed",
             "text-[16px] sm:text-sm",

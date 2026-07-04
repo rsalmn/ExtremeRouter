@@ -314,6 +314,17 @@ export default function ProvidersPage() {
       : apikeyEntries.slice(0, APIKEY_INITIAL_VISIBLE);
   const hiddenApikeyCount = apikeyEntries.length - APIKEY_INITIAL_VISIBLE;
 
+  // Cookie providers: connected first, then alphabetical by name. Auth persists as
+  // authType "apikey" (the generic credential path), so stats lookups use that key.
+  const cookieEntries = Object.entries(WEB_COOKIE_PROVIDERS)
+    .filter(([, info]) => !info.hidden && matchSearch(info.name))
+    .sort(([ka, a], [kb, b]) => {
+      const ca = getProviderStats(ka, "apikey").total > 0 ? 0 : 1;
+      const cb = getProviderStats(kb, "apikey").total > 0 ? 0 : 1;
+      if (ca !== cb) return ca - cb;
+      return (a.name || "").localeCompare(b.name || "");
+    });
+
   if (loading) {
     return (
       <div className="flex flex-col gap-8">
@@ -324,6 +335,7 @@ export default function ProvidersPage() {
   }
 
   const hasAnyResult =
+    cookieEntries.length > 0 ||
     oauthEntries.length > 0 ||
     freeEntries.length > 0 ||
     freeTierEntries.length > 0 ||
@@ -402,6 +414,47 @@ export default function ProvidersPage() {
           </div>
         )}
       </div>
+
+      {/* Cookies Provider — browser subscription cookie instead of API key */}
+      {cookieEntries.length > 0 && (
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
+            Cookies Provider
+          </h2>
+          <button
+            onClick={() => handleBatchTest("cookie")}
+            disabled={!!testingMode}
+            className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
+              testingMode === "cookie"
+                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
+                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+            }`}
+            title="Test all Cookie connections"
+            aria-label="Test all Cookie connections"
+          >
+            <span
+              className={`material-symbols-outlined text-[14px]${testingMode === "cookie" ? " animate-spin" : ""}`}
+            >
+              play_arrow
+            </span>
+            {testingMode === "cookie" ? "Testing..." : "Test All"}
+          </button>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+          {cookieEntries.map(([key, info]) => (
+            <ApiKeyProviderCard
+              key={key}
+              providerId={key}
+              provider={info}
+              stats={getProviderStats(key, "apikey")}
+              authType="cookie"
+              onToggle={(active) => handleToggleProvider(key, "apikey", active)}
+            />
+          ))}
+        </div>
+      </div>
+      )}
 
       {/* OAuth Providers */}
       {oauthEntries.length > 0 && (
@@ -558,27 +611,6 @@ export default function ProvidersPage() {
       </div>
       )}
 
-      {/* Web Cookie Providers — use browser subscription cookie instead of API key */}
-      {/* <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold flex items-center gap-2">
-            Web Cookie Providers{" "}
-          </h2>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {Object.entries(WEB_COOKIE_PROVIDERS).map(([key, info]) => (
-            <ApiKeyProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "apikey")}
-              authType="apikey"
-              onToggle={(active) => handleToggleProvider(key, "apikey", active)}
-            />
-          ))}
-        </div>
-      </div> */}
-
       <AddCompatibleModal
         variant="openai"
         isOpen={showAddCompatibleModal}
@@ -637,12 +669,14 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
     free: "bg-green-500",
     oauth: "bg-blue-500",
     apikey: "bg-amber-500",
+    cookie: "bg-purple-500",
     compatible: "bg-orange-500",
   };
   const dotLabels = {
     free: "Free",
     oauth: "OAuth",
     apikey: "API Key",
+    cookie: "Cookie",
     compatible: "Compatible",
   };
 
@@ -756,12 +790,14 @@ function ApiKeyProviderCard({
     free: "bg-green-500",
     oauth: "bg-blue-500",
     apikey: "bg-amber-500",
+    cookie: "bg-purple-500",
     compatible: "bg-orange-500",
   };
   const dotLabels = {
     free: "Free",
     oauth: "OAuth",
     apikey: "API Key",
+    cookie: "Cookie",
     compatible: "Compatible",
   };
 

@@ -3,6 +3,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { isCircuitOpen } from "open-sse/services/circuitBreaker.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -50,6 +51,14 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
         },
       };
+    }
+
+    // Circuit breaker: if this provider's breaker is OPEN, skip all its accounts.
+    // The check is cheap (in-memory) and runs once per provider per request.
+    const breakerSettings = await getSettings();
+    if (isCircuitOpen(provider, breakerSettings)) {
+      log.warn("AUTH", `${provider} | circuit breaker OPEN — skipping all accounts`);
+      return { allRateLimited: true, rateLimitedUntil: Date.now() + 30000, lastError: "Circuit breaker open", breakerOpen: true };
     }
 
     const connections = await getProviderConnections({ provider: providerId, isActive: true });

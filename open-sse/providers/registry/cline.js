@@ -23,6 +23,8 @@ export default {
       "HTTP-Referer": "https://cline.bot",
       "X-Title": "Cline",
     },
+    tokenUrl: "https://api.cline.bot/api/v1/auth/token",
+    refreshUrl: "https://api.cline.bot/api/v1/auth/refresh",
     auth: {
       combined: true,
       header: "Authorization",

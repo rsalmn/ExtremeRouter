@@ -20,7 +20,9 @@ const navGroups = [
     label: "Observe",
     items: [
       { href: "/dashboard/usage", label: "Activity", icon: "bar_chart" },
+      { href: "/dashboard/health", label: "Health", icon: "monitor_heart" },
       { href: "/dashboard/quota", label: "Quota", icon: "data_usage" },
+      { href: "/dashboard/swarm", label: "Swarm", icon: "hub" },
       { href: "/dashboard/console-log", label: "Console", icon: "terminal" },
     ],
   },

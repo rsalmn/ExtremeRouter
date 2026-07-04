@@ -225,8 +225,8 @@ export class DefaultExecutor extends BaseExecutor {
       iflow: () => this.refreshIflow(credentials.refreshToken, proxyOptions),
       gemini: () => this.refreshFromGrant(credentials, proxyOptions),
       kiro: () => this.refreshKiro(credentials.refreshToken, proxyOptions),
-      cline: () => this.refreshCline(credentials.refreshToken, proxyOptions),
-      clinepass: () => this.refreshCline(credentials.refreshToken, proxyOptions),
+      cline: () => this.refreshCline(credentials.refreshToken, proxyOptions, this.provider),
+      clinepass: () => this.refreshCline(credentials.refreshToken, proxyOptions, this.provider),
       "kimi-coding": () => this.refreshKimiCoding(credentials.refreshToken, proxyOptions),
       kilocode: () => this.refreshKilocode(credentials.refreshToken, proxyOptions)
     };
@@ -289,8 +289,12 @@ export class DefaultExecutor extends BaseExecutor {
     return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken || refreshToken, expiresIn: tokens.expiresIn };
   }
 
-  async refreshCline(refreshToken, proxyOptions = null) {
-    const response = await proxyAwareFetch(PROVIDERS.cline.refreshUrl, {
+  async refreshCline(refreshToken, proxyOptions = null, providerId = "cline") {
+    // Use the provider's own refreshUrl (clinepass has its own transport.refreshUrl);
+    // fall back to the canonical cline endpoint for backward compat.
+    const refreshUrl = PROVIDERS[providerId]?.refreshUrl || PROVIDERS.cline?.refreshUrl;
+    if (!refreshUrl) return null;
+    const response = await proxyAwareFetch(refreshUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify({ refreshToken, grantType: "refresh_token", clientType: "extension" })

@@ -18,7 +18,9 @@ const TOOL_RESULT_PREFIX = "[Tool result: ";
 // Flatten tool turns into prose so panel models keep the context but can't loop
 // on tools: drop the request's tools, turn tool/function results into assistant
 // text, and inline assistant tool_calls names instead of the structured field.
-function flattenToolHistory(messages) {
+// Convert tool/function turns into prose so panel/worker models keep context
+// but cannot loop on tools. Exported for reuse by the Hierarchical Swarm engine.
+export function flattenToolHistory(messages) {
   return messages
     .filter((msg) => msg)
     .map((msg) => {
@@ -336,7 +338,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
  * Panel responses are already translated to the client format by chatCore, so the
  * leaf content→string step reuses the translator's own extractTextContent.
  */
-function extractPanelText(json) {
+// Extract assistant text from a non-stream completion across all supported
+// formats. Exported for reuse by the Hierarchical Swarm engine (worker outputs).
+export function extractPanelText(json) {
   if (!json || typeof json !== "object") return "";
 
   // OpenAI chat completion
@@ -370,11 +374,9 @@ function extractPanelText(json) {
   return "";
 }
 
-/**
- * Append a synthesized user turn to whichever message array the request format uses.
- * Preserves the original conversation + system prompt so the judge has full context.
- */
-function appendUserTurn(body, text) {
+// Append a synthesized user turn to whichever message array the request format
+// uses. Exported for reuse by the Hierarchical Swarm engine (role directives).
+export function appendUserTurn(body, text) {
   const next = { ...body };
   if (Array.isArray(body.messages)) {
     next.messages = [...body.messages, { role: "user", content: text }];
@@ -425,7 +427,8 @@ const FUSION_DEFAULTS = {
 };
 
 // Resolve a Response (or {__error}) within ms; the loser keeps running but is ignored.
-function withTimeout(promise, ms) {
+// Exported for reuse by the Hierarchical Swarm engine.
+export function withTimeout(promise, ms) {
   return new Promise((resolve) => {
     const t = setTimeout(() => resolve({ __timeout: true }), ms);
     Promise.resolve(promise)
@@ -441,7 +444,9 @@ function withTimeout(promise, ms) {
  * still preferring a full panel when everyone is fast. Bounded by a hard timeout.
  * Returns a sparse array aligned to `calls` (undefined = not yet / dropped).
  */
-function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs }) {
+// Quorum-grace parallel collection. Exported for reuse by the Hierarchical Swarm
+// engine (parallel worker fan-out).
+export function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs }) {
   return new Promise((resolve) => {
     const out = new Array(calls.length);
     let settled = 0;
@@ -569,3 +574,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
   return handleSingleModel(judgeBody, judge);
 }
+
+// Re-export the Hierarchical Swarm engine from this barrel so chat.js keeps a
+// single import surface for all combo strategies.
+export { handleSwarmChat, SWARM_DEFAULTS } from "./swarm.js";

@@ -292,6 +292,9 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 }
 
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
+  if (url == null) {
+    throw new Error("[ProxyFetch] Cannot fetch: url is undefined or null");
+  }
   const targetUrl = typeof url === "string" ? url : url.toString();
 
   // Vercel relay: forward request via relay headers

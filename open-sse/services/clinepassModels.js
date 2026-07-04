@@ -5,16 +5,23 @@ const FETCH_TIMEOUT_MS = 5000;
 
 /**
  * Build request headers for the ClinePass /models endpoint (Cline's upstream API).
- * - API keys are sent as plain Bearer tokens.
- * - OAuth access tokens must carry the WorkOS `workos:` prefix (handled by buildClineHeaders).
+ *
+ * ClinePass is a paid subscription that authenticates via API keys (created at
+ * app.cline.bot). API keys are sent as plain Bearer tokens WITHOUT the `workos:`
+ * prefix. Account OAuth tokens (from the Cline extension) DO need the prefix —
+ * buildClineHeaders handles this distinction internally via getClineAccessToken.
  */
 function buildModelListHeaders(token, isApiKey) {
   if (isApiKey) {
+    // API keys: send as plain Bearer, no workos: prefix, no extra Cline headers.
     return {
       Accept: "application/json",
       Authorization: `Bearer ${token}`,
+      "HTTP-Referer": "https://cline.bot",
+      "X-Title": "Cline",
     };
   }
+  // Account token: buildClineHeaders adds workos: prefix as needed.
   return buildClineHeaders(token, { Accept: "application/json" });
 }
 

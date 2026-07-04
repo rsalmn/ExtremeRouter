@@ -115,81 +115,6 @@ Default URLs:
 
 ---
 
-## Video Guides
-
-<div align="center">
-
-<table>
-  <tr>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=raEyZPg5xE0">
-        <img src="https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg" alt="ExtremeRouter Setup Tutorial" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>ExtremeRouter + Claude Code FREE Setup<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=X69n5Lm06Yw">
-        <img src="https://img.youtube.com/vi/X69n5Lm06Yw/maxresdefault.jpg" alt="Tiết kiệm chi phí LLM với ExtremeRouter" width="300"/>
-      </a><br/>
-      <b>🇻🇳 Tiếng Việt</b><br/>
-      <sub>Tiết kiệm chi phí LLM cho OpenClaw với ExtremeRouter<br/>by <a href="https://www.youtube.com/c/M%C3%ACAIblog">Mì AI</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=o3qYCyjrFYg">
-        <img src="https://img.youtube.com/vi/o3qYCyjrFYg/maxresdefault.jpg" alt="Claude Code FREE Forever" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>Claude Code FREE Forever — Unlimited Models<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=Ttpc26m39Dw">
-        <img src="https://img.youtube.com/vi/Ttpc26m39Dw/maxresdefault.jpg" alt="Claude CLI Free Setup" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>Claude CLI Free Setup with ExtremeRouter 🚀<br/>by <a href="https://www.youtube.com/@CodeVerseSoban">CodeVerse Soban</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=G-5A_D5Pm6Y">
-        <img src="https://img.youtube.com/vi/G-5A_D5Pm6Y/maxresdefault.jpg" alt="Cài đặt OpenClaw Free A-Z" width="300"/>
-      </a><br/>
-      <b>🇻🇳 Tiếng Việt</b><br/>
-      <sub>Cài Đặt OpenClaw Free Từ A-Z + ExtremeRouter<br/>by <a href="https://www.youtube.com/@maigia">Mai Gia</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=JXmg8_gccgE">
-        <img src="https://img.youtube.com/vi/JXmg8_gccgE/maxresdefault.jpg" alt="FREE OpenClaw with Claude Opus" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>FREE OpenClaw + Claude Opus 4.6<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=CkVZZUSTXAI">
-        <img src="https://img.youtube.com/vi/CkVZZUSTXAI/mqdefault.jpg" alt="Claude CLI Free Setup" width="300"/>
-      </a><br/>
-      <b>🇮🇩 Indonesia</b><br/>
-      <sub>Koding 24 Jam Anti Rate Limit! Hemat Token AI 65% | Tutorial Quick Setup ExtremeRouter 🚀<br/>by <a href="https://www.youtube.com/@krisswuh">Krisswuh</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=TXGv4eofe1I">
-        <img src="https://img.youtube.com/vi/TXGv4eofe1I/mqdefault.jpg" alt="Cara Deploy ExtremeRouter di Hugging Face GRATIS Non-Stop! | Alternatif VPS RAM 16GB" width="300"/>
-      </a><br/>
-      <b>🇮🇩 Indonesia</b><br/>
-      <sub>Cara Deploy ExtremeRouter di Hugging Face GRATIS Non-Stop! | Alternatif VPS RAM 16GB<br/>by <a href="https://www.youtube.com/@krisswuh">Krisswuh</a></sub>
-    </td>
-  </tr>
-</table>
-
-</div>
-
-> 🎬 **Made a video about ExtremeRouter?** Submit a [Pull Request](https://github.com/rsalmn/extremerouter/pulls) adding your video to this section — we'll merge it!
-
----
-
 ## 🛠️ Supported CLI Tools
 
 ExtremeRouter works seamlessly with all major AI coding tools:
@@ -416,6 +341,13 @@ ExtremeRouter works seamlessly with all major AI coding tools:
 | 👥 **Multi-Account Support** | Multiple accounts per provider | Load balancing + redundancy |
 | 🔄 **Auto Token Refresh** | OAuth tokens refresh automatically | No manual re-login needed |
 | 🎨 **Custom Combos** | Create unlimited model combinations | Tailor fallback to your needs |
+| 🐝 **Hierarchical Swarm Engine** | Multi-agent orchestration: Manager → Staff → Workers → Audit → Synthesis with persona-bleed protection | Tackle complex tasks via parallel agents with a smart gatekeeper |
+| 🩺 **Health Monitor** | Live per-provider health (in-memory sliding window) + SSE dashboard | Spot degraded providers before they break your flow |
+| 🔌 **Circuit Breaker** | Per-provider CLOSED/OPEN/HALF_OPEN state machine that auto-skips failing upstreams | Stop wasting requests on a down provider; auto-recover when it heals |
+| 🔐 **Per-Key Model ACL** | Restrict which models each API key may call (`allowedModels`) | Hand out scoped keys to teammates/clients without opening everything |
+| 🍪 **Cookies Providers** | 20 web-chat providers via browser cookies (ChatGLM, DeepSeek, Qwen, Kimi, Blackbox, T3, DuckDuckGo, Venice, DouBao, v0, Poe, Copilot, Meta AI, Adapta, VeoAI, Claude/ChatGPT/Gemini web, Grok, Perplexity) | Use free web tiers with one pasted cookie — no API key needed |
+| 🤖 **Devin CLI Provider** | Session-based adapter for the Devin (Cognition) API | Route to Devin agent modes (normal/fast/lite/ultra) from any OpenAI client |
+| 🧪 **Model Test All** | Search box + "Test All" button on every provider's Available Models | Validate reachability of all models in one click, scoped to search results |
 | 📝 **Request Logging** | Debug mode with full request/response logs | Troubleshoot issues easily |
 | 💾 **Cloud Sync** | Sync config across devices | Same setup everywhere |
 | 📊 **Usage Analytics** | Track tokens, cost, trends over time | Optimize spending |
@@ -528,6 +460,46 @@ Seamless translation between formats:
 - Mix subscription, cheap, and free tiers
 - Name your combos for easy access
 - Share combos across devices with Cloud Sync
+
+### 🐝 Hierarchical Swarm Engine
+
+A multi-agent orchestration combo strategy for complex, multi-step tasks. Instead of one model answering, a small *team* of agents collaborates:
+
+- **Manager** plans the strategy and splits the task
+- **Staff** workers run subtasks in **parallel** (load-balanced across providers)
+- **Audit** stage reviews worker output
+- **Manager** synthesizes the final answer
+- A **Smart Gatekeeper** triages the prompt first (simple → single-model fast path; complex → swarm)
+- **Persona-bleed protection** keeps each stage's role isolated
+
+Live telemetry streams to the Dashboard → Swarm page (SSE). Configure in Dashboard → Combos → choose the "Hierarchical Swarm" strategy.
+
+### 🩺 Health Monitor + 🔌 Circuit Breaker
+
+Two reliability layers that keep requests flowing even when a provider degrades:
+
+- **Health Monitor** records a sliding window of success/failure samples per provider (in-memory ring buffer) and exposes a live SSE feed + the Dashboard → Health page. Spot a provider going red before it ruins your coding session.
+- **Circuit Breaker** wraps every provider in a CLOSED / OPEN / HALF_OPEN state machine. When a provider fails repeatedly, the breaker OPENS and routing **auto-skips** it (no wasted requests, no timeouts) — then probes with HALF_OPEN to auto-recover the moment it heals.
+
+Both are zero-config; tunable in Settings.
+
+### 🔐 Per-Key Model Access Control (ACL)
+
+Each API key you mint can carry an `allowedModels` allow-list. Requests using that key are rejected up-front (403) if they target a model outside the list — so you can hand out scoped keys to teammates, clients, or downstream tools without exposing your full catalog. Managed per-key in Dashboard → Endpoint.
+
+### 🍪 Cookies Providers
+
+A dedicated **Cookies Provider** category (above OAuth on the Providers page) for free web-chat services that authenticate via a browser cookie instead of an API key. Paste your cookies (or just the session token) into a multi-line field and ExtremeRouter handles token refresh, WAF cookies, PoW challenges, and SSE translation per site:
+
+- **No anti-bot (reliable):** ChatGLM, DeepSeek, Qwen, Kimi, Blackbox, T3 Chat, DuckDuckGo, Venice, DouBao, v0, Poe, Copilot, Meta AI (Muse), Adapta, VeoAI
+- **Anti-bot (best-effort, may be Cloudflare-blocked):** Claude Web, ChatGPT Web, Gemini Web
+- Plus existing cookie providers: Grok Web, Perplexity Web
+
+> Note: Claude/ChatGPT/Gemini web deploy aggressive Cloudflare anti-bot. Plain server-side fetch is often blocked (403) even with valid cookies — these are included best-effort.
+
+### 🤖 Devin CLI Provider
+
+Devin (by Cognition) is session-based, not OpenAI-compatible. The Devin adapter bridges it: it creates a Devin session, polls for completion, and synthesizes an OpenAI SSE stream back. Models map to Devin agent modes — `devin-normal`, `devin-fast`, `devin-lite`, `devin-ultra`. Auth is API-key only (`cog_...`).
 
 ### 📝 Request Logging
 

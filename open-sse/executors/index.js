@@ -19,7 +19,27 @@ import { CommandCodeExecutor } from "./commandcode.js";
 import { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
 import { MimoFreeExecutor } from "./mimo-free.js";
 import { CodeBuddyExecutor } from "./codebuddy-cn.js";
+import { ChatGLMExecutor } from "./chatglm-cn.js";
 import { DefaultExecutor } from "./default.js";
+import { DevinExecutor } from "./devin.js";
+// Web-cookie providers (ported from OmniRoute)
+import { DeepSeekWebExecutor } from "./deepseek-web.js";
+import { QwenWebExecutor } from "./qwen-web.js";
+import { KimiWebExecutor } from "./kimi-web.js";
+import { BlackboxWebExecutor } from "./blackbox-web.js";
+import { T3ChatWebExecutor } from "./t3-web.js";
+import { DuckDuckGoWebExecutor } from "./duckduckgo-web.js";
+import { VeniceWebExecutor } from "./venice-web.js";
+import { DoubaoWebExecutor } from "./doubao-web.js";
+import { V0VercelWebExecutor } from "./v0-vercel-web.js";
+import { PoeWebExecutor } from "./poe-web.js";
+import { CopilotWebExecutor } from "./copilot-web.js";
+import { MuseSparkWebExecutor } from "./muse-spark-web.js";
+import { AdaptaWebExecutor } from "./adapta-web.js";
+import { VeoAIFreeWebExecutor } from "./veoaifree-web.js";
+import { ClaudeWebExecutor } from "./claude-web.js";
+import { ChatGptWebExecutor } from "./chatgpt-web.js";
+import { GeminiWebExecutor } from "./gemini-web.js";
 
 const executors = {
   antigravity: new AntigravityExecutor(),
@@ -46,6 +66,26 @@ const executors = {
   "mimo-free": new MimoFreeExecutor(),
   mmf: new MimoFreeExecutor(), // Alias for mimo-free
   "codebuddy-cn": new CodeBuddyExecutor(),
+  devin: new DevinExecutor(),
+  "chatglm-cn": new ChatGLMExecutor(),
+  // Web-cookie providers (ported from OmniRoute)
+  "deepseek-web": new DeepSeekWebExecutor(),
+  "qwen-web": new QwenWebExecutor(),
+  "kimi-web": new KimiWebExecutor(),
+  "blackbox-web": new BlackboxWebExecutor(),
+  "t3-web": new T3ChatWebExecutor(),
+  "duckduckgo-web": new DuckDuckGoWebExecutor(),
+  "venice-web": new VeniceWebExecutor(),
+  "doubao-web": new DoubaoWebExecutor(),
+  "v0-vercel-web": new V0VercelWebExecutor(),
+  "poe-web": new PoeWebExecutor(),
+  "copilot-web": new CopilotWebExecutor(),
+  "muse-spark-web": new MuseSparkWebExecutor(),
+  "adapta-web": new AdaptaWebExecutor(),
+  "veoaifree-web": new VeoAIFreeWebExecutor(),
+  "claude-web": new ClaudeWebExecutor(),
+  "chatgpt-web": new ChatGptWebExecutor(),
+  "gemini-web": new GeminiWebExecutor(),
 };
 
 const defaultCache = new Map();
@@ -83,3 +123,23 @@ export { CommandCodeExecutor } from "./commandcode.js";
 export { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
 export { MimoFreeExecutor } from "./mimo-free.js";
 export { CodeBuddyExecutor } from "./codebuddy-cn.js";
+export { DevinExecutor } from "./devin.js";
+export { ChatGLMExecutor } from "./chatglm-cn.js";
+// Web-cookie providers (ported from OmniRoute)
+export { DeepSeekWebExecutor } from "./deepseek-web.js";
+export { QwenWebExecutor } from "./qwen-web.js";
+export { KimiWebExecutor } from "./kimi-web.js";
+export { BlackboxWebExecutor } from "./blackbox-web.js";
+export { T3ChatWebExecutor } from "./t3-web.js";
+export { DuckDuckGoWebExecutor } from "./duckduckgo-web.js";
+export { VeniceWebExecutor } from "./venice-web.js";
+export { DoubaoWebExecutor } from "./doubao-web.js";
+export { V0VercelWebExecutor } from "./v0-vercel-web.js";
+export { PoeWebExecutor } from "./poe-web.js";
+export { CopilotWebExecutor } from "./copilot-web.js";
+export { MuseSparkWebExecutor } from "./muse-spark-web.js";
+export { AdaptaWebExecutor } from "./adapta-web.js";
+export { VeoAIFreeWebExecutor } from "./veoaifree-web.js";
+export { ClaudeWebExecutor } from "./claude-web.js";
+export { ChatGptWebExecutor } from "./chatgpt-web.js";
+export { GeminiWebExecutor } from "./gemini-web.js";

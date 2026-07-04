@@ -29,6 +29,18 @@ const DEFAULT_SETTINGS = {
   observabilityBatchSize: 20,
   observabilityFlushIntervalMs: 5000,
   observabilityMaxJsonSize: 5,
+  // Reliability: circuit breaker + health monitor
+  circuitBreaker: {
+    enabled: true,
+    failureThreshold: 5,
+    windowMs: 60000,
+    cooldownMs: 30000,
+    halfOpenMaxCalls: 1,
+  },
+  healthMonitor: {
+    enabled: true,
+    windowMs: 300000,
+  },
   outboundProxyEnabled: false,
   outboundProxyUrl: "",
   outboundNoProxy: "",

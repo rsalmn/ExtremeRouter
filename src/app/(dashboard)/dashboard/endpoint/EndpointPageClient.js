@@ -24,6 +24,7 @@ export default function APIPageClient({ machineId }) {
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [modelAccessKey, setModelAccessKey] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -1036,6 +1037,12 @@ export default function APIPageClient({ machineId }) {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  {Array.isArray(key.allowedModels) && key.allowedModels.length > 0 && (
+                    <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary" title={`Restricted to ${key.allowedModels.length} models`}>
+                      <span className="material-symbols-outlined text-[12px]">lock</span>
+                      {key.allowedModels.length}
+                    </span>
+                  )}
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1055,6 +1062,13 @@ export default function APIPageClient({ machineId }) {
                     }}
                     title={key.isActive ? "Pause key" : "Resume key"}
                   />
+                  <button
+                    onClick={() => setModelAccessKey(key)}
+                    className="p-2 hover:bg-surface-2 text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    title="Model access control"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
                   <button
                     onClick={() => handleDeleteKey(key.id)}
                     className="p-2 hover:bg-danger/10 text-danger opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
@@ -1284,6 +1298,12 @@ export default function APIPageClient({ machineId }) {
       </Modal>
 
       {/* Confirm Modal */}
+      <ModelAccessModal
+        apiKey={modelAccessKey}
+        onClose={() => setModelAccessKey(null)}
+        onSaved={async () => { await fetchData(); setModelAccessKey(null); }}
+      />
+
       <ConfirmModal
         isOpen={!!confirmState}
         onClose={() => setConfirmState(null)}
@@ -1293,6 +1313,109 @@ export default function APIPageClient({ machineId }) {
         variant="danger"
       />
     </div>
+  );
+}
+
+
+function ModelAccessModal({ apiKey, onClose, onSaved }) {
+  const [allowedModels, setAllowedModels] = useState(null);
+  const [modelInput, setModelInput] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (apiKey) {
+      setAllowedModels(Array.isArray(apiKey.allowedModels) ? [...apiKey.allowedModels] : []);
+      setModelInput("");
+    }
+  }, [apiKey]);
+
+  if (!apiKey) return null;
+
+  const addModel = () => {
+    const m = modelInput.trim();
+    if (!m) return;
+    if (!allowedModels.includes(m)) setAllowedModels((prev) => [...prev, m]);
+    setModelInput("");
+  };
+
+  const removeModel = (m) => setAllowedModels((prev) => prev.filter((x) => x !== m));
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await fetch(`/api/keys/${apiKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowedModels: allowedModels.length > 0 ? allowedModels : null }),
+      });
+      await onSaved();
+    } catch (err) {
+      console.log("Failed to save model access:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      isOpen={!!apiKey}
+      onClose={onClose}
+      title={`Model Access — ${apiKey.name || "Key"}`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={handleSave} loading={saving}>Save</Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-text-muted">
+          Restrict which models this API key can access. Leave empty to allow all models.
+          Supports exact model IDs (e.g. <code className="font-mono text-xs">glm/glm-5</code>) or
+          provider prefixes (e.g. <code className="font-mono text-xs">glm/</code> to allow all GLM models).
+        </p>
+
+        {/* Add model input */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={modelInput}
+            onChange={(e) => setModelInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addModel(); } }}
+            placeholder="e.g. glm/glm-5 or glm/"
+            className="flex-1 rounded border border-border bg-surface-2 px-3 py-2 text-sm text-text-main placeholder:text-text-muted/70 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          <Button size="sm" variant="secondary" icon="add" onClick={addModel}>Add</Button>
+        </div>
+
+        {/* Allowed models list */}
+        {allowedModels.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {allowedModels.map((m) => (
+              <span key={m} className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 text-xs font-mono text-primary">
+                {m}
+                <button onClick={() => removeModel(m)} className="text-primary/60 hover:text-danger transition-colors" aria-label={`Remove ${m}`}>
+                  <span className="material-symbols-outlined text-[14px]">close</span>
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-text-muted">
+            No restrictions — this key can access all models
+          </div>
+        )}
+
+        {allowedModels.length > 0 && (
+          <button
+            onClick={() => setAllowedModels([])}
+            className="self-start text-xs text-danger hover:underline"
+          >
+            Clear all restrictions
+          </button>
+        )}
+      </div>
+    </Modal>
   );
 }
 

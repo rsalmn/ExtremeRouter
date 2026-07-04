@@ -236,13 +236,19 @@ const STRATEGY_OPTIONS = [
   { value: "fallback", label: "Fallback — try in order" },
   { value: "round-robin", label: "Round Robin — rotate" },
   { value: "fusion", label: "Fusion — panel + judge" },
+  { value: "swarm", label: "Hierarchical Swarm — Manager→Staff→Workers" },
 ];
 
 function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
+  const [showSwarmRoleSelect, setShowSwarmRoleSelect] = useState(null); // null | "manager" | "staff" | "audit"
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
+  const isSwarm = current === "swarm";
+  const swarmManager = strategy.managerModel || "";
+  const swarmStaff = strategy.staffModel || "";
+  const swarmAudit = strategy.auditModel || "";
 
   return (
     <Card padding="sm" className="group">
@@ -289,6 +295,46 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
                     <span className="material-symbols-outlined text-[13px]">close</span>
                   </button>
                 )}
+              </div>
+            )}
+
+            {/* Swarm: role pickers (Manager/Staff/Audit) */}
+            {isSwarm && (
+              <div className="mt-2 flex min-w-0 flex-col gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[
+                    { key: "manager", label: "Manager", icon: "psychology", value: swarmManager, placeholder: `Auto — ${combo.models[0] || "first"}` },
+                    { key: "staff", label: "Staff", icon: "badge", value: swarmStaff, placeholder: "Same as Manager" },
+                    { key: "audit", label: "Audit", icon: "fact_check", value: swarmAudit, placeholder: "Same as Staff" },
+                  ].map((role) => (
+                    <div key={role.key} className="flex items-center gap-1">
+                      <span className="text-[11px] font-medium text-text-muted">{role.label}</span>
+                      <button
+                        onClick={() => setShowSwarmRoleSelect(role.key)}
+                        className="inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:border-primary hover:bg-primary/5 transition-colors"
+                        title={`Pick the ${role.label} model`}
+                      >
+                        <span className="material-symbols-outlined text-[13px]">{role.icon}</span>
+                        <span className="truncate">{role.value || role.placeholder}</span>
+                      </button>
+                      {role.value && (
+                        <button
+                          onClick={() => onSetStrategy({ [`${role.key}Model`]: "" })}
+                          className="p-0.5 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                          title={`Reset ${role.label}`}
+                        >
+                          <span className="material-symbols-outlined text-[13px]">close</span>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
+                  <span className="font-medium">Workers</span>
+                  <span>= combo models ({combo.models.length})</span>
+                  <span className="text-text-subtle">·</span>
+                  <a href="/dashboard/swarm" className="text-primary hover:underline">Telemetry →</a>
+                </div>
               </div>
             )}
           </div>
@@ -347,6 +393,22 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
         addedModelValues={judge ? [judge] : []}
         closeOnSelect={true}
       />
+
+      {/* Swarm role model pickers */}
+      {showSwarmRoleSelect && (
+        <ModelSelectModal
+          isOpen={true}
+          onClose={() => setShowSwarmRoleSelect(null)}
+          onSelect={(m) => {
+            onSetStrategy({ [`${showSwarmRoleSelect}Model`]: m?.value || "" });
+            setShowSwarmRoleSelect(null);
+          }}
+          activeProviders={activeProviders}
+          title={`Select ${showSwarmRoleSelect === "manager" ? "Manager" : showSwarmRoleSelect === "staff" ? "Staff" : "Audit"} Model`}
+          addedModelValues={[]}
+          closeOnSelect={true}
+        />
+      )}
     </Card>
   );
 }

@@ -14,7 +14,11 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const isXaiApiKey = provider === "xai" && !isCookie;
   const credentialLabel = isCookie ? "Cookie Value" : "API Key";
   const credentialPlaceholder = isCookie
-    ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
+    ? (provider === "grok-web"
+        ? "sso=xxxxx... or just the raw value"
+        : provider === "chatglm-cn"
+          ? "Paste your full chatglm.cn cookies, or just the chatglm_refresh_token value (eyJhbGc...)"
+          : "eyJhbGciOi...")
     : (isXaiApiKey ? "xai-..." : "");
 
   const isAzure = provider === "azure";
@@ -214,14 +218,31 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         )}
         {!isOllamaLocal && (
           <div className="flex gap-2">
-            <Input
-              label={credentialLabel}
-              type={isCookie ? "text" : "password"}
-              value={formData.apiKey}
-              onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-              placeholder={credentialPlaceholder}
-              className="flex-1"
-            />
+            {isCookie ? (
+              <div className="flex-1 flex flex-col gap-1">
+                <label className="text-xs font-medium text-text-muted">{credentialLabel}</label>
+                <textarea
+                  value={formData.apiKey}
+                  onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+                  placeholder={credentialPlaceholder}
+                  rows={5}
+                  spellCheck={false}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-text-main placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary font-mono resize-y"
+                />
+              </div>
+            ) : (
+              <Input
+                label={credentialLabel}
+                type="password"
+                value={formData.apiKey}
+                onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+                placeholder={credentialPlaceholder}
+                className="flex-1"
+              />
+            )}
             <div className="pt-6">
               <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
                 {validating ? "Checking..." : "Check"}
