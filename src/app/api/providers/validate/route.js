@@ -1046,6 +1046,103 @@ export async function POST(request) {
           break;
         }
 
+        case "huggingchat": {
+          let cookie = apiKey.replace(/^Cookie:\s*/i, "");
+          if (!cookie.includes("=")) cookie = `hf-chat=${cookie}`;
+          const res = await fetch("https://huggingface.co/chat/settings", {
+            method: "GET",
+            headers: { Cookie: cookie, "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired hf-chat cookie — re-copy from huggingface.co/chat cookies.";
+          } else { isValid = true; }
+          break;
+        }
+        case "lmarena": {
+          const cookie = apiKey.replace(/^Cookie:\s*/i, "");
+          const res = await fetch("https://arena.ai/api/user", {
+            method: "GET",
+            headers: { Cookie: cookie, "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired LMArena session cookie — re-copy from arena.ai cookies.";
+          } else { isValid = true; }
+          break;
+        }
+        case "puter": {
+          let token = apiKey.trim();
+          const am = token.match(/puter_auth_token=([^;]+)/); if (am) token = am[1];
+          const bm = token.match(/[Bb]earer\s+(.+)/); if (bm) token = bm[1].trim();
+          const res = await fetch("https://api.puter.com/whoami", {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired Puter auth token — re-copy from puter.com dashboard.";
+          } else { isValid = true; }
+          break;
+        }
+        case "pollinations": {
+          // No-auth by default — validate reachability.
+          const res = await fetch("https://gen.pollinations.ai/v1/models", {
+            method: "GET",
+            headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+          });
+          isValid = res.ok;
+          if (!isValid) error = "Pollinations gateway is unreachable — try again later.";
+          break;
+        }
+        case "cody": {
+          // Cody personal access token (sgp_...). Probe the /whoami endpoint.
+          const res = await fetch("https://sourcegraph.com/.api/llm/models", {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "X-Requested-With": "Sourcegraph-Editor",
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            },
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid Cody access token — re-create at sourcegraph.com/user/settings/tokens.";
+          } else { isValid = true; }
+          break;
+        }
+        case "trae": {
+          // Cloud-IDE-JWT (bare token or Authorization header paste).
+          let token = apiKey.trim();
+          const tm = token.match(/Cloud-IDE-JWT\s+(.+)/i); if (tm) token = tm[1].trim();
+          const res = await fetch("https://core-normal.trae.ai/api/remote/v1/models?functions=solo_agent_remote,solo_work_remote", {
+            method: "GET",
+            headers: {
+              Authorization: `Cloud-IDE-JWT ${token}`,
+              "Content-Type": "application/json",
+              "X-Trae-Client-Type": "web",
+              Referer: "https://solo.trae.ai/",
+              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+            },
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired Cloud-IDE-JWT — re-copy from solo.trae.ai DevTools (Authorization header).";
+          } else { isValid = true; }
+          break;
+        }
+        case "windsurf": {
+          // Coming Soon — but still validate the sk-ws-... token shape lightly.
+          const token = apiKey.trim();
+          if (token.length < 16) {
+            isValid = false;
+            error = "Windsurf token looks too short — copy the sk-ws-... token from the IDE 'Windsurf: Provide Auth Token' command.";
+          } else {
+            isValid = true;
+            // Note: gRPC adapter pending; we can't fully validate without it.
+          }
+          break;
+        }
         default: {
           // Generic probe for OpenAI-compatible providers (config-driven from PROVIDERS)
           const cfg = PROVIDERS[provider];

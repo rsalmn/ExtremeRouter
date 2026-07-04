@@ -978,6 +978,80 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         if (res.status === 403) return { valid: true, error: "Google blocked the probe (HTTP 403) — cookies may still be valid; Gemini requires a real browser fingerprint" };
         return { valid: true, error: null };
       }
+      case "huggingchat": {
+        // hf-chat cookie (bare value or full cookie blob).
+        let cookie = connection.apiKey.replace(/^Cookie:\s*/i, "");
+        if (!cookie.includes("=")) cookie = `hf-chat=${cookie}`;
+        const res = await fetchWithConnectionProxy("https://huggingface.co/chat/settings", {
+          method: "GET",
+          headers: { Cookie: cookie, "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired hf-chat cookie" };
+      }
+      case "lmarena": {
+        // LMArena session cookie (arena-auth-prod-v1.0 + chunks, or full Cookie header).
+        const cookie = connection.apiKey.replace(/^Cookie:\s*/i, "");
+        const res = await fetchWithConnectionProxy("https://arena.ai/api/user", {
+          method: "GET",
+          headers: { Cookie: cookie, "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired LMArena session cookie" };
+      }
+      case "puter": {
+        // puter_auth_token (bare token, Bearer prefix, or full cookie string).
+        let token = connection.apiKey.trim();
+        const am = token.match(/puter_auth_token=([^;]+)/); if (am) token = am[1];
+        const bm = token.match(/[Bb]earer\s+(.+)/); if (bm) token = bm[1].trim();
+        const res = await fetchWithConnectionProxy("https://api.puter.com/whoami", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired Puter auth token" };
+      }
+      case "pollinations": {
+        // No-auth by default — validate reachability of the gateway.
+        const res = await fetchWithConnectionProxy("https://gen.pollinations.ai/v1/models", {
+          method: "GET",
+          headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Pollinations gateway is unreachable" };
+      }
+      case "cody": {
+        const res = await fetchWithConnectionProxy("https://sourcegraph.com/.api/llm/models", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${connection.apiKey}`,
+            "X-Requested-With": "Sourcegraph-Editor",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+          },
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid Cody access token" };
+      }
+      case "trae": {
+        let token = connection.apiKey.trim();
+        const tm = token.match(/Cloud-IDE-JWT\s+(.+)/i); if (tm) token = tm[1].trim();
+        const res = await fetchWithConnectionProxy("https://core-normal.trae.ai/api/remote/v1/models?functions=solo_agent_remote,solo_work_remote", {
+          method: "GET",
+          headers: {
+            Authorization: `Cloud-IDE-JWT ${token}`,
+            "Content-Type": "application/json",
+            "X-Trae-Client-Type": "web",
+            Referer: "https://solo.trae.ai/",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+          },
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired Cloud-IDE-JWT" };
+      }
+      case "windsurf": {
+        const token = connection.apiKey.trim();
+        const valid = token.length >= 16;
+        return { valid, error: valid ? null : "Token too short — re-copy the sk-ws-... token" };
+      }
       default:
         return { valid: false, error: "Provider test not supported" };
     }

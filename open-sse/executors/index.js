@@ -40,6 +40,13 @@ import { VeoAIFreeWebExecutor } from "./veoaifree-web.js";
 import { ClaudeWebExecutor } from "./claude-web.js";
 import { ChatGptWebExecutor } from "./chatgpt-web.js";
 import { GeminiWebExecutor } from "./gemini-web.js";
+// Web-cookie providers (ported from OmniRoute — batch 2)
+import { HuggingChatExecutor } from "./huggingchat.js";
+import { LMArenaExecutor } from "./lmarena.js";
+import { PuterExecutor } from "./puter.js";
+import { PollinationsExecutor } from "./pollinations.js";
+// OAuth import-token providers (ported from OmniRoute)
+import { TraeExecutor } from "./trae.js";
 
 const executors = {
   antigravity: new AntigravityExecutor(),
@@ -86,6 +93,12 @@ const executors = {
   "claude-web": new ClaudeWebExecutor(),
   "chatgpt-web": new ChatGptWebExecutor(),
   "gemini-web": new GeminiWebExecutor(),
+  // Web-cookie providers (ported from OmniRoute — batch 2)
+  huggingchat: new HuggingChatExecutor(),
+  lmarena: new LMArenaExecutor(),
+  puter: new PuterExecutor(),
+  pollinations: new PollinationsExecutor(),
+  trae: new TraeExecutor(),
 };
 
 const defaultCache = new Map();
@@ -143,3 +156,10 @@ export { VeoAIFreeWebExecutor } from "./veoaifree-web.js";
 export { ClaudeWebExecutor } from "./claude-web.js";
 export { ChatGptWebExecutor } from "./chatgpt-web.js";
 export { GeminiWebExecutor } from "./gemini-web.js";
+// Web-cookie providers (ported from OmniRoute — batch 2)
+export { HuggingChatExecutor } from "./huggingchat.js";
+export { LMArenaExecutor } from "./lmarena.js";
+export { PuterExecutor } from "./puter.js";
+export { PollinationsExecutor } from "./pollinations.js";
+// OAuth import-token providers (ported from OmniRoute)
+export { TraeExecutor } from "./trae.js";

@@ -95,6 +95,10 @@ function getConnectionErrorTag(connection) {
 
 const APIKEY_INITIAL_VISIBLE = 20;
 
+// Providers that ship a vector SVG brand icon (instead of a PNG). getIconPath picks
+// the .svg extension for these ids so the brand mark renders crisp at any size.
+const SVG_ICON_IDS = new Set(["windsurf", "trae", "cody"]);
+
 export default function ProvidersPage() {
   const [connections, setConnections] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
@@ -103,6 +107,9 @@ export default function ProvidersPage() {
   // Collapsible provider sections — start collapsed since these hold many items.
   const [showCustomProviders, setShowCustomProviders] = useState(false);
   const [showCookiesProviders, setShowCookiesProviders] = useState(false);
+  const [showOauthProviders, setShowOauthProviders] = useState(true);
+  const [showFreeProviders, setShowFreeProviders] = useState(true);
+  const [showApikeyProviders, setShowApikeyProviders] = useState(true);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
     useState(false);
@@ -486,9 +493,18 @@ export default function ProvidersPage() {
       {oauthEntries.length > 0 && (
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
+          <button
+            type="button"
+            onClick={() => setShowOauthProviders((v) => !v)}
+            className="flex items-center gap-2 text-lg sm:text-xl font-semibold leading-tight text-text-main transition-colors hover:text-primary"
+            aria-expanded={showOauthProviders}
+          >
+            <span className={`material-symbols-outlined text-[20px] transition-transform ${showOauthProviders ? "rotate-90" : ""}`}>
+              chevron_right
+            </span>
             OAuth Providers
-          </h2>
+            <span className="text-xs font-normal text-text-muted">({oauthEntries.length})</span>
+          </button>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <ModelAvailabilityBadge />
             <button
@@ -511,18 +527,20 @@ export default function ProvidersPage() {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          {oauthEntries.map(([key, info]) => (
-            <ProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "oauth")}
-              authType="oauth"
-              onToggle={(active) => handleToggleProvider(key, "oauth", active)}
-            />
-          ))}
-        </div>
+        {showOauthProviders && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+            {oauthEntries.map(([key, info]) => (
+              <ProviderCard
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, "oauth")}
+                authType="oauth"
+                onToggle={(active) => handleToggleProvider(key, "oauth", active)}
+              />
+            ))}
+          </div>
+        )}
       </div>
       )}
 
@@ -530,9 +548,18 @@ export default function ProvidersPage() {
       {(freeEntries.length > 0 || freeTierEntries.length > 0) && (
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
+          <button
+            type="button"
+            onClick={() => setShowFreeProviders((v) => !v)}
+            className="flex items-center gap-2 text-lg sm:text-xl font-semibold leading-tight text-text-main transition-colors hover:text-primary"
+            aria-expanded={showFreeProviders}
+          >
+            <span className={`material-symbols-outlined text-[20px] transition-transform ${showFreeProviders ? "rotate-90" : ""}`}>
+              chevron_right
+            </span>
             Free Tier Providers
-          </h2>
+            <span className="text-xs font-normal text-text-muted">({freeEntries.length + freeTierEntries.length})</span>
+          </button>
           <button
             onClick={() => handleBatchTest("free")}
             disabled={!!testingMode}
@@ -552,38 +579,40 @@ export default function ProvidersPage() {
             {testingMode === "free" ? "Testing..." : "Test All"}
           </button>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          {freeEntries.map(([key, info]) => {
-            // Kiro accepts both OAuth and api-key connections; count/toggle both
-            // so the card total matches the provider detail page (#kiro-apikey).
-            // Kiro's headless api-key flow persists authType "api_key" (underscore),
-            // while generic apikey providers use "apikey" — include both spellings.
-            const freeAuthTypes =
-              key === "kiro" ? ["oauth", "apikey", "api_key"] : "oauth";
-            return (
-              <ProviderCard
+        {showFreeProviders && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+            {freeEntries.map(([key, info]) => {
+              // Kiro accepts both OAuth and api-key connections; count/toggle both
+              // so the card total matches the provider detail page (#kiro-apikey).
+              // Kiro's headless api-key flow persists authType "api_key" (underscore),
+              // while generic apikey providers use "apikey" — include both spellings.
+              const freeAuthTypes =
+                key === "kiro" ? ["oauth", "apikey", "api_key"] : "oauth";
+              return (
+                <ProviderCard
+                  key={key}
+                  providerId={key}
+                  provider={info}
+                  stats={getProviderStats(key, freeAuthTypes)}
+                  authType="free"
+                  onToggle={(active) =>
+                    handleToggleProvider(key, freeAuthTypes, active)
+                  }
+                />
+              );
+            })}
+            {freeTierEntries.map(([key, info]) => (
+              <ApiKeyProviderCard
                 key={key}
                 providerId={key}
                 provider={info}
-                stats={getProviderStats(key, freeAuthTypes)}
-                authType="free"
-                onToggle={(active) =>
-                  handleToggleProvider(key, freeAuthTypes, active)
-                }
+                stats={getProviderStats(key, "apikey")}
+                authType="apikey"
+                onToggle={(active) => handleToggleProvider(key, "apikey", active)}
               />
-            );
-          })}
-          {freeTierEntries.map(([key, info]) => (
-            <ApiKeyProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "apikey")}
-              authType="apikey"
-              onToggle={(active) => handleToggleProvider(key, "apikey", active)}
-            />
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
       )}
 
@@ -591,9 +620,18 @@ export default function ProvidersPage() {
       {apikeyEntries.length > 0 && (
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
-            API Key Providers{" "}
-          </h2>
+          <button
+            type="button"
+            onClick={() => setShowApikeyProviders((v) => !v)}
+            className="flex items-center gap-2 text-lg sm:text-xl font-semibold leading-tight text-text-main transition-colors hover:text-primary"
+            aria-expanded={showApikeyProviders}
+          >
+            <span className={`material-symbols-outlined text-[20px] transition-transform ${showApikeyProviders ? "rotate-90" : ""}`}>
+              chevron_right
+            </span>
+            API Key Providers
+            <span className="text-xs font-normal text-text-muted">({apikeyEntries.length})</span>
+          </button>
           <button
             onClick={() => handleBatchTest("apikey")}
             disabled={!!testingMode}
@@ -613,26 +651,30 @@ export default function ProvidersPage() {
             {testingMode === "apikey" ? "Testing..." : "Test All"}
           </button>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          {visibleApikeyEntries.map(([key, info]) => (
-            <ApiKeyProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "apikey")}
-              authType="apikey"
-              onToggle={(active) => handleToggleProvider(key, "apikey", active)}
-            />
-          ))}
-        </div>
-        {!isApikeySearching && !showAllApikey && hiddenApikeyCount > 0 && (
-          <button
-            onClick={() => setShowAllApikey(true)}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:border-primary hover:bg-primary/5"
-          >
-            <span className="material-symbols-outlined text-[16px]">expand_more</span>
-            Show all {apikeyEntries.length} providers
-          </button>
+        {showApikeyProviders && (
+          <>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+              {visibleApikeyEntries.map(([key, info]) => (
+                <ApiKeyProviderCard
+                  key={key}
+                  providerId={key}
+                  provider={info}
+                  stats={getProviderStats(key, "apikey")}
+                  authType="apikey"
+                  onToggle={(active) => handleToggleProvider(key, "apikey", active)}
+                />
+              ))}
+            </div>
+            {!isApikeySearching && !showAllApikey && hiddenApikeyCount > 0 && (
+              <button
+                onClick={() => setShowAllApikey(true)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:border-primary hover:bg-primary/5"
+              >
+                <span className="material-symbols-outlined text-[16px]">expand_more</span>
+                Show all {apikeyEntries.length} providers
+              </button>
+            )}
+          </>
         )}
       </div>
       )}
@@ -721,7 +763,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
               }}
             >
               <ProviderIcon
-                src={`/providers/${provider.id}.png`}
+                src={`/providers/${provider.id}.${SVG_ICON_IDS.has(provider.id) ? "svg" : "png"}`}
                 alt={provider.name}
                 size={30}
                 className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
@@ -833,7 +875,7 @@ function ApiKeyProviderCard({
         ? "/providers/oai-r.png"
         : "/providers/oai-cc.png";
     if (isAnthropicCompatible) return "/providers/anthropic-m.png";
-    return `/providers/${provider.id}.png`;
+    return `/providers/${provider.id}.${SVG_ICON_IDS.has(provider.id) ? "svg" : "png"}`;
   };
 
   return (
@@ -886,6 +928,14 @@ function ApiKeyProviderCard({
                     {isAnthropicCompatible && (
                       <Badge variant="default" size="sm">
                         Messages
+                      </Badge>
+                    )}
+                    {provider.comingSoon && (
+                      <Badge variant="warning" size="sm">
+                        <span className="flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[12px]">schedule</span>
+                          Coming Soon
+                        </span>
                       </Badge>
                     )}
                     {errorTime && (

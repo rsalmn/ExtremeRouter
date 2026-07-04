@@ -280,12 +280,14 @@ export async function saveRequestUsage(entry) {
       }
 
       db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, latencyTtftMs, latencyTotalMs) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
           stringifyJson(tokens), stringifyJson({}),
+          Math.max(0, Math.round(entry.latency?.ttft || 0)),
+          Math.max(0, Math.round(entry.latency?.total || 0)),
         ]
       );
 
@@ -656,7 +658,84 @@ export async function getUsageStats(period = "all") {
   }
 
   stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
+
+  // ── Status breakdown (error rate) + latency stats ───────────────────────────
+  // These two dimensions live only in usageHistory (not in usageDaily rollups), so
+  // we query the live history for the selected period. For long periods this scans
+  // the in-range rows; the timestamp DESC index keeps it bounded by the period.
+  try {
+    const { startTs } = periodRange(period);
+    const statusRows = db.all(
+      `SELECT status, COUNT(*) AS n FROM usageHistory WHERE timestamp >= ? GROUP BY status`,
+      [startTs]
+    );
+    const statusCounts = {};
+    let total = 0;
+    for (const r of statusRows) {
+      const key = String(r.status || "ok").toLowerCase();
+      statusCounts[key] = (statusCounts[key] || 0) + r.n;
+      total += r.n;
+    }
+    stats.statusCounts = statusCounts;
+    // errorRate = non-ok / total (treat "error"/"failed"/"unauthorized"/etc. as errors)
+    const errorKeys = new Set(["error", "failed", "unauthorized", "forbidden", "timeout", "blocked"]);
+    let errorCount = 0;
+    for (const [k, v] of Object.entries(statusCounts)) if (errorKeys.has(k)) errorCount += v;
+    stats.errorRate = total > 0 ? errorCount / total : 0;
+    stats.errorCount = errorCount;
+
+    // Latency aggregation (avg / p50 / p95 of total latency, ms). Only rows with a
+    // non-zero latency contribute (pre-migration rows and error paths have 0).
+    const latencyRows = db.all(
+      `SELECT latencyTotalMs FROM usageHistory
+       WHERE timestamp >= ? AND latencyTotalMs > 0
+       ORDER BY latencyTotalMs ASC`,
+      [startTs]
+    );
+    if (latencyRows.length > 0) {
+      const vals = latencyRows.map((r) => r.latencyTotalMs);
+      const sum = vals.reduce((a, b) => a + b, 0);
+      const pick = (p) => vals[Math.min(vals.length - 1, Math.floor((p / 100) * vals.length))];
+      stats.latency = {
+        avg: Math.round(sum / vals.length),
+        p50: pick(50),
+        p95: pick(95),
+        sampleCount: vals.length,
+      };
+    } else {
+      stats.latency = { avg: 0, p50: 0, p95: 0, sampleCount: 0 };
+    }
+  } catch {
+    stats.statusCounts = stats.statusCounts || {};
+    stats.errorRate = 0;
+    stats.errorCount = 0;
+    stats.latency = { avg: 0, p50: 0, p95: 0, sampleCount: 0 };
+  }
+
   return stats;
+}
+
+// Resolve a period code to a { startTs } ISO lower bound for usageHistory scans.
+function periodRange(period) {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  let startMs;
+  if (period === "today") {
+    const d = new Date(); d.setHours(0, 0, 0, 0); startMs = d.getTime();
+  } else if (period === "24h") {
+    startMs = now - day;
+  } else if (period === "7d") {
+    startMs = now - 7 * day;
+  } else if (period === "30d") {
+    startMs = now - 30 * day;
+  } else if (period === "60d") {
+    startMs = now - 60 * day;
+  } else {
+    // "all" — use a 1-year lookback so the scan stays bounded; usageHistory beyond
+    // a year is rare and the usageDaily rollup covers long-tail totals anyway.
+    startMs = now - 365 * day;
+  }
+  return { startTs: new Date(startMs).toISOString() };
 }
 
 export async function getChartData(period = "7d") {
@@ -732,6 +811,117 @@ export async function getChartData(period = "7d") {
   });
 }
 
+// Resolve the bucket strategy for a period: hourly buckets for the short windows
+// (today/24h) reading live usageHistory, daily buckets for longer ranges. Returns
+// { buckets: [{ label, startMs, endMs }], queryAll: bool }.
+function resolveChartBuckets(period) {
+  const now = Date.now();
+  const hour = 3600000;
+  const day = 24 * hour;
+  if (period === "today") {
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const startTime = start.getTime();
+    const buckets = Array.from({ length: 24 }, (_, i) => {
+      const s = startTime + i * hour;
+      return { label: new Date(s).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }), startMs: s, endMs: s + hour };
+    });
+    return { buckets, fromMs: startTime, toMs: now };
+  }
+  if (period === "24h") {
+    const startTime = now - 24 * hour;
+    const buckets = Array.from({ length: 24 }, (_, i) => {
+      const s = startTime + i * hour;
+      return { label: new Date(s).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }), startMs: s, endMs: s + hour };
+    });
+    return { buckets, fromMs: startTime, toMs: now };
+  }
+  const count = period === "7d" ? 7 : period === "30d" ? 30 : 60;
+  const startDay = new Date(); startDay.setHours(0, 0, 0, 0);
+  const buckets = Array.from({ length: count }, (_, i) => {
+    const d = new Date(startDay); d.setDate(d.getDate() - (count - 1 - i));
+    const s = d.getTime();
+    return { label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), startMs: s, endMs: s + day };
+  });
+  return { buckets, fromMs: buckets[0].startMs, toMs: now };
+}
+
+// Per-provider stacked token series for the period.
+export async function getStackedChartData(period = "7d") {
+  const db = await getAdapter();
+  const { buckets, fromMs } = resolveChartBuckets(period);
+  const rows = db.all(
+    `SELECT timestamp, provider, promptTokens, completionTokens FROM usageHistory WHERE timestamp >= ?`,
+    [new Date(fromMs).toISOString()]
+  );
+  const providerTotals = {};
+  for (const b of buckets) b.providers = {};
+  for (const r of rows) {
+    const t = new Date(r.timestamp).getTime();
+    const idx = buckets.findIndex((b) => t >= b.startMs && t < b.endMs);
+    if (idx < 0) continue;
+    const prov = r.provider || "unknown";
+    const toks = (r.promptTokens || 0) + (r.completionTokens || 0);
+    buckets[idx].providers[prov] = (buckets[idx].providers[prov] || 0) + toks;
+    providerTotals[prov] = (providerTotals[prov] || 0) + toks;
+  }
+  // Cap to top 8 providers by volume; bucket the rest as "Other".
+  const top = Object.entries(providerTotals).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([p]) => p);
+  return buckets.map((b) => {
+    const out = { label: b.label };
+    let other = 0;
+    for (const [p, v] of Object.entries(b.providers || {})) {
+      if (top.includes(p)) out[p] = v;
+      else other += v;
+    }
+    if (other > 0) out.Other = other;
+    return out;
+  });
+}
+
+// Latency (avg + p95) per bucket for the period, in ms.
+export async function getLatencyChartData(period = "7d") {
+  const db = await getAdapter();
+  const { buckets, fromMs } = resolveChartBuckets(period);
+  const rows = db.all(
+    `SELECT timestamp, latencyTotalMs FROM usageHistory WHERE timestamp >= ? AND latencyTotalMs > 0`,
+    [new Date(fromMs).toISOString()]
+  );
+  const samples = buckets.map(() => []);
+  for (const r of rows) {
+    const t = new Date(r.timestamp).getTime();
+    const idx = buckets.findIndex((b) => t >= b.startMs && t < b.endMs);
+    if (idx < 0) continue;
+    samples[idx].push(r.latencyTotalMs);
+  }
+  return buckets.map((b, i) => {
+    const v = samples[i];
+    if (v.length === 0) return { label: b.label, avgMs: 0, p95Ms: 0, samples: 0 };
+    const sorted = [...v].sort((a, c) => a - c);
+    const sum = sorted.reduce((a, c) => a + c, 0);
+    const pick = (p) => sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
+    return { label: b.label, avgMs: Math.round(sum / sorted.length), p95Ms: pick(95), samples: sorted.length };
+  });
+}
+
+// Error vs ok request counts per bucket for the period.
+export async function getErrorChartData(period = "7d") {
+  const db = await getAdapter();
+  const { buckets, fromMs } = resolveChartBuckets(period);
+  const errorKeys = new Set(["error", "failed", "unauthorized", "forbidden", "timeout", "blocked"]);
+  const rows = db.all(
+    `SELECT timestamp, status FROM usageHistory WHERE timestamp >= ?`,
+    [new Date(fromMs).toISOString()]
+  );
+  for (const r of rows) {
+    const t = new Date(r.timestamp).getTime();
+    const idx = buckets.findIndex((b) => t >= b.startMs && t < b.endMs);
+    if (idx < 0) continue;
+    if (errorKeys.has(String(r.status || "ok").toLowerCase())) buckets[idx].error = (buckets[idx].error || 0) + 1;
+    else buckets[idx].ok = (buckets[idx].ok || 0) + 1;
+  }
+  return buckets.map((b) => ({ label: b.label, ok: b.ok || 0, error: b.error || 0 }));
+}
+
 function formatLogDate(date = new Date()) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
@@ -744,7 +934,7 @@ export async function getRecentLogs(limit = 200) {
   try {
     const db = await getAdapter();
     const rows = db.all(
-      `SELECT timestamp, provider, model, connectionId, promptTokens, completionTokens, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`,
+      `SELECT timestamp, provider, model, connectionId, promptTokens, completionTokens, status, tokens, latencyTtftMs, latencyTotalMs FROM usageHistory ORDER BY id DESC LIMIT ?`,
       [limit],
     );
     if (!rows.length) return [];
@@ -757,14 +947,22 @@ export async function getRecentLogs(limit = 200) {
     } catch {}
 
     return rows.map((r) => {
-      const ts = formatLogDate(new Date(r.timestamp));
-      const p = r.provider?.toUpperCase() || "-";
-      const m = r.model || "-";
-      const account = connMap[r.connectionId] || (r.connectionId ? r.connectionId.slice(0, 8) : "-");
       const tk = r.tokens ? parseJson(r.tokens, {}) : {};
-      const sent = r.promptTokens ?? tk.prompt_tokens ?? "-";
-      const received = r.completionTokens ?? tk.completion_tokens ?? "-";
-      return `${ts} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${r.status || "-"}`;
+      const account = connMap[r.connectionId] || (r.connectionId ? r.connectionId.slice(0, 8) : "");
+      return {
+        timestamp: r.timestamp,
+        model: r.model || "",
+        provider: r.provider || "",
+        providerLabel: r.provider?.toUpperCase() || "",
+        account,
+        connectionId: r.connectionId || "",
+        promptTokens: r.promptTokens ?? tk.prompt_tokens ?? 0,
+        completionTokens: r.completionTokens ?? tk.completion_tokens ?? 0,
+        cachedTokens: tk.cached_tokens || tk.cache_read_input_tokens || 0,
+        status: r.status || "ok",
+        latencyTotalMs: r.latencyTotalMs || 0,
+        latencyTtftMs: r.latencyTtftMs || 0,
+      };
     });
   } catch (e) {
     console.error("[usageRepo] getRecentLogs failed:", e.message);

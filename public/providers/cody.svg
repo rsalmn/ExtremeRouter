@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="cody-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF6B35"/>
+      <stop offset="100%" stop-color="#FF3D00"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#1A0F0A"/>
+  <!-- Stylized "C" — Sourcegraph Cody brand mark -->
+  <path d="M44 20 C38 14, 26 14, 20 22 C14 30, 14 42, 20 50 C26 56, 38 56, 44 50" fill="none" stroke="url(#cody-grad)" stroke-width="6" stroke-linecap="round"/>
+  <!-- Graph node accent (Sourcegraph = code graph) -->
+  <circle cx="32" cy="36" r="4" fill="url(#cody-grad)"/>
+  <circle cx="18" cy="22" r="2.5" fill="#FF6B35" opacity="0.7"/>
+  <circle cx="46" cy="50" r="2.5" fill="#FF6B35" opacity="0.7"/>
+  <line x1="32" y1="36" x2="18" y2="22" stroke="#FF6B35" stroke-width="1.5" opacity="0.4"/>
+  <line x1="32" y1="36" x2="46" y2="50" stroke="#FF6B35" stroke-width="1.5" opacity="0.4"/>
+</svg>

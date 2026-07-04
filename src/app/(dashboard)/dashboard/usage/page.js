@@ -2,8 +2,10 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { UsageStats, RequestLogger, CardSkeleton, SegmentedControl, PageHeader } from "@/shared/components";
+import { CardSkeleton, SegmentedControl, PageHeader } from "@/shared/components";
 import RequestDetailsTab from "./components/RequestDetailsTab";
+import OverviewTab from "./components/overview/OverviewTab";
+import LiveLogsTab from "./components/logs/LiveLogsTab";
 
 const PERIODS = [
   { value: "today", label: "Today" },
@@ -11,6 +13,13 @@ const PERIODS = [
   { value: "7d", label: "7D" },
   { value: "30d", label: "30D" },
   { value: "60d", label: "60D" },
+  { value: "all", label: "All" },
+];
+
+const TABS = [
+  { value: "overview", label: "Overview" },
+  { value: "logs", label: "Logs" },
+  { value: "details", label: "Details" },
 ];
 
 export default function UsagePage() {
@@ -42,17 +51,14 @@ function UsageContent() {
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <PageHeader
-        title="Activity"
-        description="Requests, analytics, and request details"
+        title="Usage"
+        description="Requests, analytics, latency, and live activity"
         icon="bar_chart"
       />
       {/* Tabs + period selector on same row */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <SegmentedControl
-          options={[
-            { value: "overview", label: "Overview" },
-            { value: "details", label: "Details" },
-          ]}
+          options={TABS}
           value={activeTab}
           onChange={handleTabChange}
           className="w-full sm:w-auto"
@@ -70,10 +76,10 @@ function UsageContent() {
 
       {activeTab === "overview" && (
         <Suspense fallback={<CardSkeleton />}>
-          <UsageStats period={period} setPeriod={setPeriod} hidePeriodSelector />
+          <OverviewTab period={period} />
         </Suspense>
       )}
-      {activeTab === "logs" && <RequestLogger />}
+      {activeTab === "logs" && <LiveLogsTab />}
       {activeTab === "details" && <RequestDetailsTab />}
     </div>
   );

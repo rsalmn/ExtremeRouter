@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="trae-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B5CF6"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0F0F1A"/>
+  <!-- Stylized "T" with a dynamic forward-leaning cut -->
+  <path d="M16 20 L48 20 L48 27 L36 27 L36 50 L28 50 L28 27 L16 27 Z" fill="url(#trae-grad)"/>
+  <!-- Accent slash -->
+  <path d="M40 14 L48 14 L24 56 L16 56 Z" fill="url(#trae-grad)" opacity="0.25"/>
+</svg>
