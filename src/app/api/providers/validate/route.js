@@ -842,16 +842,25 @@ export async function POST(request) {
         }
 
         case "poe-web": {
-          // p-b cookie (bare value or full cookie string).
-          let pb = apiKey.replace(/^Cookie:\s*/i, "");
-          const pm = pb.match(/p-b=([^;]+)/);
-          if (pm) pb = pm[1];
+          // Poe sits behind Cloudflare — forward the full cookie jar (which carries
+          // cf_clearance + poe-tchannel-channel) when the user pasted it; otherwise
+          // fall back to a bare p-b header. p-b values may be URL-encoded (%3D → =).
+          const rawCookie = apiKey.replace(/^Cookie:\s*/i, "");
+          let cookieHeader;
+          if (rawCookie.includes("p-b=") && rawCookie.includes(";")) {
+            cookieHeader = rawCookie;
+          } else {
+            const pm = rawCookie.match(/p-b=([^;]+)/);
+            let pb = pm ? pm[1] : rawCookie;
+            try { pb = decodeURIComponent(pb); } catch { /* not encoded */ }
+            cookieHeader = `p-b=${pb}`;
+          }
           const res = await fetch("https://www.poe.com/api/gql_POST", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Accept: "application/json",
-              Cookie: `p-b=${pb}`,
+              Cookie: cookieHeader,
               "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
               Referer: "https://www.poe.com/",
               Origin: "https://www.poe.com",
@@ -864,7 +873,7 @@ export async function POST(request) {
           });
           if (res.status === 401 || res.status === 403) {
             isValid = false;
-            error = "Invalid or expired p-b cookie — re-copy from poe.com cookies.";
+            error = "Invalid or expired p-b cookie — re-copy the FULL cookie string from poe.com (must include cf_clearance + poe-tchannel).";
           } else {
             isValid = true;
           }

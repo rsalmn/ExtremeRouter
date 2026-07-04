@@ -37,11 +37,26 @@ const MODEL_MAP = {
 };
 
 // Accept either the bare p-b value or a full Cookie header; extract `p-b`.
+// Decodes URL-encoded values (e.g. %3D → =) so base64 padding is restored.
 function extractPbCookie(raw) {
   if (!raw) return "";
   const v = String(raw).trim().replace(/^Cookie:\s*/i, "");
   const match = v.match(/p-b=([^;]+)/);
-  return match ? match[1] : v;
+  const captured = match ? match[1] : v;
+  try { return decodeURIComponent(captured); } catch { return captured; }
+}
+
+// Build the Cookie header to send to Poe. When the user pastes the full cookie
+// jar, forward it verbatim — Poe sits behind Cloudflare and needs cf_clearance +
+// poe-tchannel-channel, which a p-b-only header lacks. When the user pastes a
+// bare p-b value, fall back to `p-b=<value>`.
+function buildPoeCookieHeader(raw) {
+  const v = String(raw || "").trim().replace(/^Cookie:\s*/i, "");
+  if (v.includes("p-b=") && v.includes(";")) {
+    // Full cookie jar — forward as-is.
+    return v;
+  }
+  return `p-b=${extractPbCookie(v)}`;
 }
 
 function errorResponse(status, message, code = "POE_ERROR") {
@@ -131,7 +146,7 @@ export class PoeWebExecutor extends BaseExecutor {
       Accept: "application/json",
       Referer: `${BASE_URL}/`,
       Origin: BASE_URL,
-      Cookie: `p-b=${pbCookie}`,
+      Cookie: buildPoeCookieHeader(credentials?.apiKey || ""),
     };
 
     log?.info?.("POE-WEB", `Query to bot=${botName} (model=${requestedModel}), len=${prompt.length}, stream=${wantStream}`);

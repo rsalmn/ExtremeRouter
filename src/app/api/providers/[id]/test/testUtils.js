@@ -864,20 +864,28 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Invalid or expired v0.dev session cookie" };
       }
       case "poe-web": {
-        let pb = connection.apiKey.replace(/^Cookie:\s*/i, "");
-        const pm = pb.match(/p-b=([^;]+)/);
-        if (pm) pb = pm[1];
+        // Forward the full cookie jar (cf_clearance + poe-tchannel required by Cloudflare).
+        const rawPb = connection.apiKey.replace(/^Cookie:\s*/i, "");
+        let cookieHeader;
+        if (rawPb.includes("p-b=") && rawPb.includes(";")) {
+          cookieHeader = rawPb;
+        } else {
+          const pm = rawPb.match(/p-b=([^;]+)/);
+          let pb = pm ? pm[1] : rawPb;
+          try { pb = decodeURIComponent(pb); } catch { /* not encoded */ }
+          cookieHeader = `p-b=${pb}`;
+        }
         const res = await fetchWithConnectionProxy("https://www.poe.com/api/gql_POST", {
           method: "POST",
           headers: {
-            "Content-Type": "application/json", Accept: "application/json", Cookie: `p-b=${pb}`,
+            "Content-Type": "application/json", Accept: "application/json", Cookie: cookieHeader,
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
             Referer: "https://www.poe.com/", Origin: "https://www.poe.com",
           },
           body: JSON.stringify({ operationName: "ChatViewQuery", query: "query ChatViewQuery { viewer { id } }", variables: {} }),
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
-        return { valid, error: valid ? null : "Invalid or expired p-b cookie" };
+        return { valid, error: valid ? null : "Invalid or expired p-b cookie — re-copy the FULL cookie string (needs cf_clearance)" };
       }
       case "copilot-web": {
         let token = connection.apiKey.trim();

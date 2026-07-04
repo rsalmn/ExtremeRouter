@@ -567,14 +567,23 @@ export class HuggingChatExecutor extends BaseExecutor {
       }
 
       const createData = await createRes.json().catch(() => ({}));
-      conversationId = createData.conversationId;
+      // Resolve conversationId from several places HF may return it:
+      //   1. body.conversationId (legacy)
+      //   2. body.id (newer)
+      //   3. Location response header tail (e.g. "/chat/conversation/<id>")
+      conversationId = createData.conversationId || createData.id;
+      if (!conversationId) {
+        const loc = createRes.headers.get("location") || createRes.headers.get("Location") || "";
+        const fromLoc = String(loc).split("?")[0].split("/").filter(Boolean).pop();
+        if (fromLoc && /^[a-zA-Z0-9_-]{6,}$/.test(fromLoc)) conversationId = fromLoc;
+      }
       // Carry forward any cookies minted by the create call.
       cookieHeader = mergeCookieHeaderWithSetCookie(cookieHeader, getSetCookieHeaders(createRes.headers));
       baseHeaders.Cookie = cookieHeader;
 
       if (!conversationId) {
         return {
-          response: errorResponse(502, "HuggingChat did not return a conversationId", "NO_CONVERSATION_ID"),
+          response: errorResponse(502, `HuggingChat did not return a conversationId (status ${createRes.status})`, "NO_CONVERSATION_ID"),
           url: CONVERSATION_URL,
           headers: baseHeaders,
           transformedBody: body,
