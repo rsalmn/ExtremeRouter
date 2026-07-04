@@ -222,6 +222,18 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
+  // Some providers (e.g. Cline/ClinePass) wrap the OpenAI completion inside a
+  // `{ data: {...}, success: true }` envelope for non-streaming responses, while the
+  // streaming (SSE) chunks arrive un-nested. Unwrap the envelope so downstream
+  // translation / choice-extraction sees `choices` at the top level.
+  if (
+    responseBody &&
+    typeof responseBody === "object" &&
+    !Array.isArray(responseBody.choices) &&
+    Array.isArray(responseBody.data?.choices)
+  ) {
+    responseBody = { ...responseBody.data, ...(responseBody.data.usage ? { usage: responseBody.data.usage } : {}) };
+  }
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)

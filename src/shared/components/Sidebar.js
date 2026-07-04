@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import PropTypes from "prop-types";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
+import DonateModal from "./DonateModal";
 
 const navGroups = [
   {
@@ -46,12 +48,19 @@ const navGroups = [
 ];
 
 export default function Sidebar({ onClose }) {
+  // usePathname() returns the current route and updates on every client-side
+  // navigation (App Router), so `active` below is always derived from the live URL.
   const pathname = usePathname();
+  const [supportOpen, setSupportOpen] = useState(false);
 
   const isActive = (href) => {
-    if (href === "/dashboard/endpoint") return pathname === "/dashboard" || pathname.startsWith("/dashboard/endpoint");
-    if (href === "/dashboard/media-providers/image") return pathname.startsWith("/dashboard/media-providers");
-    return pathname.startsWith(href);
+    if (!pathname) return false;
+    // Exact match always wins (covers /dashboard root → Endpoint).
+    if (pathname === href) return true;
+    // Segment-boundary match: "/dashboard/providers" matches "/dashboard/providers/clinepass"
+    // but NOT "/dashboard/providers-new" or unrelated routes.
+    if (href === "/dashboard/endpoint") return pathname === "/dashboard";
+    return pathname === href || pathname.startsWith(href + "/");
   };
 
   return (
@@ -110,6 +119,14 @@ export default function Sidebar({ onClose }) {
       </nav>
 
       <div className="border-t border-border-subtle p-3">
+        <button
+          type="button"
+          onClick={() => setSupportOpen(true)}
+          className="mb-2 flex h-9 w-full items-center gap-3 rounded-brand px-3 text-sm text-text-muted transition-colors hover:bg-surface-2 hover:text-text-main"
+        >
+          <span className="material-symbols-outlined text-[18px]">volunteer_activism</span>
+          <span className="font-medium">Support</span>
+        </button>
         <div className="rounded-brand border border-border-subtle bg-surface-2 p-3">
           <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-text-main">
             <span className="size-2 rounded-full bg-success" />
@@ -118,6 +135,8 @@ export default function Sidebar({ onClose }) {
           <div className="font-mono text-[11px] text-text-muted">localhost:20128/v1</div>
         </div>
       </div>
+
+      <DonateModal isOpen={supportOpen} onClose={() => setSupportOpen(false)} />
     </aside>
   );
 }

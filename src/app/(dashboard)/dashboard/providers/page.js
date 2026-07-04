@@ -100,6 +100,9 @@ export default function ProvidersPage() {
   const [providerNodes, setProviderNodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAllApikey, setShowAllApikey] = useState(false);
+  // Collapsible provider sections — start collapsed since these hold many items.
+  const [showCustomProviders, setShowCustomProviders] = useState(false);
+  const [showCookiesProviders, setShowCookiesProviders] = useState(false);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
     useState(false);
@@ -314,13 +317,14 @@ export default function ProvidersPage() {
       : apikeyEntries.slice(0, APIKEY_INITIAL_VISIBLE);
   const hiddenApikeyCount = apikeyEntries.length - APIKEY_INITIAL_VISIBLE;
 
-  // Cookie providers: connected first, then alphabetical by name. Auth persists as
-  // authType "apikey" (the generic credential path), so stats lookups use that key.
+  // Cookie providers: connected first, then alphabetical by name.
+  // POST /api/providers persists web-cookie connections with authType "cookie", so stats
+  // lookups must query that key (not "apikey").
   const cookieEntries = Object.entries(WEB_COOKIE_PROVIDERS)
     .filter(([, info]) => !info.hidden && matchSearch(info.name))
     .sort(([ka, a], [kb, b]) => {
-      const ca = getProviderStats(ka, "apikey").total > 0 ? 0 : 1;
-      const cb = getProviderStats(kb, "apikey").total > 0 ? 0 : 1;
+      const ca = getProviderStats(ka, "cookie").total > 0 ? 0 : 1;
+      const cb = getProviderStats(kb, "cookie").total > 0 ? 0 : 1;
       if (ca !== cb) return ca - cb;
       return (a.name || "").localeCompare(b.name || "");
     });
@@ -363,12 +367,21 @@ export default function ProvidersPage() {
         </div>
       )}
 
-      {/* Custom Providers (OpenAI/Anthropic Compatible) — dynamic */}
+      {/* Custom Providers (OpenAI/Anthropic Compatible) — collapsible */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
-            Custom Providers (OpenAI/Anthropic Compatible){" "}
-          </h2>
+          <button
+            type="button"
+            onClick={() => setShowCustomProviders((v) => !v)}
+            className="flex items-center gap-2 text-lg sm:text-xl font-semibold leading-tight text-text-main transition-colors hover:text-primary"
+            aria-expanded={showCustomProviders}
+          >
+            <span className={`material-symbols-outlined text-[20px] transition-transform ${showCustomProviders ? "rotate-90" : ""}`}>
+              chevron_right
+            </span>
+            Custom Providers (OpenAI/Anthropic Compatible)
+            <span className="text-xs font-normal text-text-muted">({compatibleProviders.length + anthropicCompatibleProviders.length})</span>
+          </button>
           <div className="grid grid-cols-1 gap-2 sm:flex sm:w-auto">
             <Button
               size="sm"
@@ -389,39 +402,50 @@ export default function ProvidersPage() {
             </Button>
           </div>
         </div>
-        {compatibleProviders.length === 0 &&
-        anthropicCompatibleProviders.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 py-2 border border-dashed border-border rounded-xl text-text-muted text-sm">
-            <span className="material-symbols-outlined text-[18px]">extension</span>
-            <span>No custom providers — use buttons above to add OpenAI/Anthropic compatible endpoints</span>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-            {[...compatibleProviders, ...anthropicCompatibleProviders].map(
-              (info) => (
-                <ApiKeyProviderCard
-                  key={info.id}
-                  providerId={info.id}
-                  provider={info}
-                  stats={getProviderStats(info.id, "apikey")}
-                  authType="compatible"
-                  onToggle={(active) =>
-                    handleToggleProvider(info.id, "apikey", active)
-                  }
-                />
-              ),
-            )}
-          </div>
+        {showCustomProviders && (
+          compatibleProviders.length === 0 &&
+          anthropicCompatibleProviders.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-2 border border-dashed border-border rounded-xl text-text-muted text-sm">
+              <span className="material-symbols-outlined text-[18px]">extension</span>
+              <span>No custom providers — use buttons above to add OpenAI/Anthropic compatible endpoints</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+              {[...compatibleProviders, ...anthropicCompatibleProviders].map(
+                (info) => (
+                  <ApiKeyProviderCard
+                    key={info.id}
+                    providerId={info.id}
+                    provider={info}
+                    stats={getProviderStats(info.id, "apikey")}
+                    authType="compatible"
+                    onToggle={(active) =>
+                      handleToggleProvider(info.id, "apikey", active)
+                    }
+                  />
+                ),
+              )}
+            </div>
+          )
         )}
       </div>
 
-      {/* Cookies Provider — browser subscription cookie instead of API key */}
+      {/* Cookies Provider — browser subscription cookie instead of API key (collapsible) */}
       {cookieEntries.length > 0 && (
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
+          <button
+            type="button"
+            onClick={() => setShowCookiesProviders((v) => !v)}
+            className="flex items-center gap-2 text-lg sm:text-xl font-semibold leading-tight text-text-main transition-colors hover:text-primary"
+            aria-expanded={showCookiesProviders}
+          >
+            <span className={`material-symbols-outlined text-[20px] transition-transform ${showCookiesProviders ? "rotate-90" : ""}`}>
+              chevron_right
+            </span>
             Cookies Provider
-          </h2>
+            <span className="text-xs font-normal text-text-muted">({cookieEntries.length})</span>
+          </button>
           <button
             onClick={() => handleBatchTest("cookie")}
             disabled={!!testingMode}
@@ -441,18 +465,20 @@ export default function ProvidersPage() {
             {testingMode === "cookie" ? "Testing..." : "Test All"}
           </button>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          {cookieEntries.map(([key, info]) => (
-            <ApiKeyProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "apikey")}
-              authType="cookie"
-              onToggle={(active) => handleToggleProvider(key, "apikey", active)}
-            />
-          ))}
-        </div>
+        {showCookiesProviders && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+            {cookieEntries.map(([key, info]) => (
+              <ApiKeyProviderCard
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, "cookie")}
+                authType="cookie"
+                onToggle={(active) => handleToggleProvider(key, "cookie", active)}
+              />
+            ))}
+          </div>
+        )}
       </div>
       )}
 

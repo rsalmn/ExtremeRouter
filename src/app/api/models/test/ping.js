@@ -179,7 +179,14 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     };
   }
 
-  const hasChoices = Array.isArray(parsed?.choices) && parsed.choices.length > 0;
+  // Some providers (e.g. Cline/ClinePass) wrap the OpenAI completion inside a
+  // `{ data: {...} }` envelope for non-streaming responses. Unwrap it so the
+  // choices check below finds them.
+  const choicesSource = (Array.isArray(parsed?.choices) && parsed.choices.length > 0)
+    ? parsed
+    : (parsed?.data && typeof parsed.data === "object" ? parsed.data : parsed);
+
+  const hasChoices = Array.isArray(choicesSource?.choices) && choicesSource.choices.length > 0;
   if (!hasChoices) {
     return {
       ok: false,
@@ -189,5 +196,8 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     };
   }
 
+  // Accept reasoning-only responses: some models (e.g. thinking models on a tiny
+  // max_tokens probe) spend the whole budget on reasoning_content before emitting
+  // any visible content token. The model is reachable and responding — that's a pass.
   return { ok: true, latencyMs, error: null, status: res.status };
 }
