@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./images/extremerouter.png?1" alt="ExtremeRouter Dashboard" width="800"/>
+  <img src="./images/{125AA317-2FD3-42E5-8473-2216D843C015}.png" alt="ExtremeRouter Dashboard" width="800"/>
   
   # ExtremeRouter — AI Gateway Control Plane
 
