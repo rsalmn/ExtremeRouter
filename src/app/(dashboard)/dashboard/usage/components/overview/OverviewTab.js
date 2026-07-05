@@ -319,13 +319,15 @@ export default function OverviewTab({ period }) {
       <OverviewBreakdownTable stats={stats} period={period} />
 
       {/* Provider topology */}
-      <Card title="Provider Topology" subtitle="Live routing state across connected providers" icon="hub">
-        <ProviderTopology
-          providers={providers}
-          activeRequests={stats.activeRequests || []}
-          lastProvider={lastProvider}
-          errorProvider={stats.errorProvider || ""}
-        />
+      <Card title="Provider Topology" subtitle="Live routing state across connected providers" icon="hub" padding="none">
+        <div className="px-5 pb-5">
+          <ProviderTopology
+            providers={providers}
+            activeRequests={stats.activeRequests || []}
+            lastProvider={lastProvider}
+            errorProvider={stats.errorProvider || ""}
+          />
+        </div>
       </Card>
     </div>
   );
