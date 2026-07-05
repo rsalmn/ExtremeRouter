@@ -1,5 +1,9 @@
 <div align="center">
-  <img src="./images/{125AA317-2FD3-42E5-8473-2216D843C015}.png" alt="ExtremeRouter Dashboard" width="800"/>
+  <img width="1920" height="980" alt="Image" src="./images/{125AA317-2FD3-42E5-8473-2216D843C015}.png"/>
+  <img width="1920" height="980" alt="Image" src="https://github.com/user-attachments/assets/35d8d13e-bcfa-437e-9b39-f9ad6bd6ce9d" />
+  <img width="1919" height="980" alt="Image" src="https://github.com/user-attachments/assets/b0b55acd-2f12-4856-9d35-f12bccf31490" />
+  <img width="1915" height="980" alt="Image" src="https://github.com/user-attachments/assets/7cf83585-8719-43b4-8eb7-0aed57a50f0a" />
+  <img width="1920" height="979" alt="Image" src="https://github.com/user-attachments/assets/ac925671-670c-4566-8c1a-7265d1e343b9" />
   
   # ExtremeRouter — AI Gateway Control Plane
 
