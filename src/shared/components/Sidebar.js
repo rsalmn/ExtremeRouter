@@ -12,6 +12,7 @@ const navGroups = [
   {
     label: "Gateway",
     items: [
+      { href: "/dashboard/overview", label: "Overview", icon: "dashboard" },
       { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
       { href: "/dashboard/providers", label: "Providers", icon: "dns" },
       { href: "/dashboard/combos", label: "Combos", icon: "layers" },

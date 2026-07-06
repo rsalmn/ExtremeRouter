@@ -185,6 +185,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("PONYTAIL", `${ponytailLevel} | ${finalFormat}`);
   }
 
+  // Compute total tokens saved by RTK + Headroom for this request.
+  // RTK measures bytes saved → approximate tokens (bytes/4).
+  // Headroom reports tokens_saved directly.
+  const rtkBytesSaved = rtkStats ? (rtkStats.bytesBefore || 0) - (rtkStats.bytesAfter || 0) : 0;
+  const rtkTokensSaved = Math.round(rtkBytesSaved / 4);
+  const headroomTokensSaved = headroomStats?.tokens_saved || 0;
+  const savedTokens = rtkTokensSaved + headroomTokensSaved;
+
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
   appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
@@ -308,7 +316,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, savedTokens };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0F0F1A"/>
+  <path d="M32 12 C24 20, 24 32, 32 40 C40 32, 40 20, 32 12 Z" fill="#3B5FE5" opacity="0.9"/>
+  <path d="M32 24 C28 28, 28 36, 32 40 C36 36, 36 28, 32 24 Z" fill="#6B8FFF"/>
+  <circle cx="32" cy="46" r="3" fill="#3B5FE5"/>
+  <text x="32" y="56" font-family="Inter,sans-serif" font-size="8" font-weight="700" fill="#6B8FFF" text-anchor="middle">GLM</text>
+</svg>

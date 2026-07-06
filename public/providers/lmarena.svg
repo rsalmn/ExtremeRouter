@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0D0D1A"/>
+  <path d="M16 40 L24 28 L32 36 L40 22 L48 40 Z" fill="#8B5CF6" opacity="0.4"/>
+  <path d="M16 44 L24 36 L32 40 L40 32 L48 44 Z" fill="#8B5CF6"/>
+  <circle cx="24" cy="28" r="2.5" fill="#A78BFA"/>
+  <circle cx="40" cy="22" r="2.5" fill="#A78BFA"/>
+  <text x="32" y="56" font-family="Inter,sans-serif" font-size="6" font-weight="700" fill="#A78BFA" text-anchor="middle">ARENA</text>
+</svg>

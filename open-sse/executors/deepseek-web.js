@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
@@ -122,19 +121,41 @@ function resolveModelOptions(model, bodyObj) {
   return { modelType, thinkingEnabled, searchEnabled };
 }
 
-// ── PoW solver (DeepSeekHashV1 = SHA3-256) ──────────────────────────────
+// ── PoW solver (DeepSeekHashV1 = Keccak-256 capacity=256) ────────────────
 //
 // Algorithm: find nonce in [0, difficulty) such that
-//   sha3-256(prefix + String(nonce)) === challenge
+//   keccak256(prefix + String(nonce)) === challenge
 // where prefix = `${salt}_${expireAt}_`.
 //
-// Uses node:crypto's native sha3-256 (fast). Mirrors the OmniRoute JS solver: keep a base hash of
-// the prefix and `.copy().update(nonce)` per attempt to avoid re-hashing the prefix each iteration.
+// IMPORTANT: DeepSeekHashV1 is NOT standard SHA3-256. Standard SHA3-256 uses
+// capacity=512, but DeepSeek uses Keccak-256 with capacity=256. node:crypto's
+// sha3-256 produces DIFFERENT hashes. We use the custom Keccak sponge from
+// deepseek-pow-solver.cjs (ported from OmniRoute's js-sha3 implementation).
 
-function solvePowWithNodeCrypto(challenge, prefix, difficulty) {
-  const baseHash = createHash("sha3-256").update(prefix);
+import { createRequire } from "node:module";
+const _require = createRequire(import.meta.url);
+const { U: KeccakSponge } = _require("../lib/deepseek-pow-solver.cjs");
+
+function createDeepSeekHash() {
+  const self = {};
+  self._sponge = new KeccakSponge({ capacity: 256, padding: 6 });
+  self.update = (s) => { self._sponge.absorb(Buffer.from(s, "utf8")); return self; };
+  self.digest = (fmt) => self._sponge.squeeze(6).toString(fmt || "hex");
+  self.copy = () => {
+    const c = {};
+    c._sponge = self._sponge.copy();
+    c.update = (s) => { c._sponge.absorb(Buffer.from(s, "utf8")); return c; };
+    c.digest = (fmt) => c._sponge.squeeze(6).toString(fmt || "hex");
+    return c;
+  };
+  return self;
+}
+
+function solvePowWithKeccak(challenge, prefix, difficulty) {
+  const h = createDeepSeekHash();
+  h.update(prefix);
   for (let nonce = 0; nonce < difficulty; nonce++) {
-    if (baseHash.copy().update(String(nonce)).digest("hex") === challenge) {
+    if (h.copy().update(String(nonce)).digest("hex") === challenge) {
       return nonce;
     }
   }
@@ -142,9 +163,9 @@ function solvePowWithNodeCrypto(challenge, prefix, difficulty) {
 }
 
 async function solvePow(challenge, signal) {
-  // algorithm is always "DeepSeekHashV1" (validated server-side); we don't branch on it here.
+  // algorithm is always "DeepSeekHashV1" (validated server-side).
   const prefix = `${challenge.salt}_${challenge.expire_at}_`;
-  let answer = solvePowWithNodeCrypto(challenge.challenge, prefix, challenge.difficulty);
+  let answer = solvePowWithKeccak(challenge.challenge, prefix, challenge.difficulty);
   if (answer < 0) throw new Error("PoW solver failed (no answer found within difficulty)");
   if (signal?.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
   return Buffer.from(

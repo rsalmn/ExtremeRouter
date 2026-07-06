@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0D0D1A"/>
+  <path d="M24 18 C24 14, 28 14, 30 16 L34 24 L38 16 C40 14, 44 14, 44 18 L44 36 C44 40, 40 42, 38 40 L34 34 L30 40 C28 42, 24 40, 24 36 Z" fill="#1E1B4B"/>
+  <circle cx="34" cy="22" r="3" fill="#A78BFA"/>
+  <circle cx="34" cy="22" r="1.5" fill="#E0D7FF"/>
+  <path d="M24 44 L44 44" stroke="#7C3AED" stroke-width="2" opacity="0.5"/>
+  <text x="32" y="54" font-family="Inter,sans-serif" font-size="7" font-weight="700" fill="#7C3AED" text-anchor="middle">KIMI</text>
+</svg>

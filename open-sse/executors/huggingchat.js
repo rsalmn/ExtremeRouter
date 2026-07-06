@@ -566,11 +566,17 @@ export class HuggingChatExecutor extends BaseExecutor {
         };
       }
 
-      const createData = await createRes.json().catch(() => ({}));
+      // Read body as text first, then parse manually — HF may return the response
+      // with a non-JSON content-type (e.g. text/html), which causes .json() to throw.
+      // The .catch(()=>({})) was silently swallowing the parse failure.
+      const rawBody = await createRes.text().catch(() => "");
+      let createData = {};
+      try { createData = rawBody ? JSON.parse(rawBody) : {}; } catch { /* not JSON */ }
+
       // Resolve conversationId from several places HF may return it:
-      //   1. body.conversationId (legacy)
-      //   2. body.id (newer)
-      //   3. Location response header tail (e.g. "/chat/conversation/<id>")
+      //   1. body.conversationId (confirmed working format)
+      //   2. body.id (fallback)
+      //   3. Location response header tail
       conversationId = createData.conversationId || createData.id;
       if (!conversationId) {
         const loc = createRes.headers.get("location") || createRes.headers.get("Location") || "";
@@ -583,7 +589,7 @@ export class HuggingChatExecutor extends BaseExecutor {
 
       if (!conversationId) {
         return {
-          response: errorResponse(502, `HuggingChat did not return a conversationId (status ${createRes.status})`, "NO_CONVERSATION_ID"),
+          response: errorResponse(502, `HuggingChat did not return a conversationId (status ${createRes.status}, body: ${rawBody.slice(0, 200)})`, "NO_CONVERSATION_ID"),
           url: CONVERSATION_URL,
           headers: baseHeaders,
           transformedBody: body,

@@ -72,6 +72,7 @@ function aggregateEntryToDay(day, entry) {
   day.completionTokens = (day.completionTokens || 0) + completionTokens;
   day.cachedTokens = (day.cachedTokens || 0) + cachedTokens;
   day.cost = (day.cost || 0) + cost;
+  day.savedTokens = (day.savedTokens || 0) + (entry.savedTokens || 0);
 
   day.byProvider ||= {};
   day.byModel ||= {};
@@ -285,7 +286,7 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens), stringifyJson(entry.savedTokens ? { savedTokens: entry.savedTokens } : {}),
           Math.max(0, Math.round(entry.latency?.ttft || 0)),
           Math.max(0, Math.round(entry.latency?.total || 0)),
         ]
@@ -304,6 +305,13 @@ export async function saveRequestUsage(entry) {
       const cur = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
       const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
       db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
+
+      // Token saved lifetime counter (RTK + Headroom savings)
+      if (entry.savedTokens > 0) {
+        const savedCur = db.get(`SELECT value FROM _meta WHERE key = 'tokensSavedLifetime'`);
+        const savedNext = (savedCur ? parseInt(savedCur.value, 10) : 0) + entry.savedTokens;
+        db.run(`INSERT INTO _meta(key, value) VALUES('tokensSavedLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(savedNext)]);
+      }
       inserted = true;
     });
 
