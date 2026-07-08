@@ -986,6 +986,22 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         if (res.status === 403) return { valid: true, error: "Google blocked the probe (HTTP 403) — cookies may still be valid; Gemini requires a real browser fingerprint" };
         return { valid: true, error: null };
       }
+      case "zenmux-free": {
+        const cookie = connection.apiKey.replace(/^Cookie:\s*/i, "");
+        const ctoken = (cookie.match(/ctoken=([^;]+)/) || [])[1];
+        if (!ctoken) return { valid: false, error: "No ctoken found in cookies" };
+        const res = await fetchWithConnectionProxy(`https://zenmux.ai/api/anthropic/v1/models?ctoken=${ctoken}`, {
+          method: "GET",
+          headers: {
+            Cookie: cookie,
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+            Origin: "https://zenmux.ai",
+            Referer: "https://zenmux.ai/platform/chat",
+          },
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired zenmux.ai cookies" };
+      }
       case "huggingchat": {
         // hf-chat cookie (bare value or full cookie blob).
         let cookie = connection.apiKey.replace(/^Cookie:\s*/i, "");
@@ -1026,6 +1042,42 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Pollinations gateway is unreachable" };
+      }
+      case "api-airforce": {
+        // Session-cookie → api_key exchange. The user pastes the airforce_session
+        // JWT (bare value, `airforce_session=...`, or full Cookie header). The
+        // /v1/* endpoint rejects the session JWT as a Bearer token (401 "Invalid
+        // API key"), so the probe exchanges it via /api/me, which returns the
+        // account JSON including the real api_key.
+        let sessionJwt = connection.apiKey.trim();
+        if (sessionJwt.toLowerCase().startsWith("cookie:")) {
+          const m = sessionJwt.slice(7).trim().match(/airforce_session=([^;]+)/);
+          sessionJwt = m ? m[1] : sessionJwt.slice(7).trim();
+        } else {
+          const m = sessionJwt.match(/airforce_session=([^;]+)/);
+          if (m) sessionJwt = m[1];
+        }
+        if (!sessionJwt.startsWith("eyJ")) {
+          return { valid: false, error: "Not a valid airforce_session JWT — copy the cookie value from api.airforce DevTools (starts with eyJ)" };
+        }
+        const res = await fetchWithConnectionProxy("https://api.airforce/api/me", {
+          method: "GET",
+          headers: {
+            Cookie: `airforce_session=${sessionJwt}`,
+            Accept: "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            Referer: "https://api.airforce/playground/",
+          },
+        }, effectiveProxy);
+        if (res.status === 401 || res.status === 403) {
+          return { valid: false, error: "Invalid or expired airforce_session cookie" };
+        }
+        if (!res.ok) {
+          return { valid: false, error: `api.airforce /api/me returned ${res.status}` };
+        }
+        const data = await res.json().catch(() => null);
+        const valid = !!(data && data.api_key && String(data.api_key).startsWith("sk-air-"));
+        return { valid, error: valid ? null : "Session accepted but no api_key returned — account may be limited" };
       }
       case "cody": {
         const res = await fetchWithConnectionProxy("https://sourcegraph.com/.api/llm/models", {

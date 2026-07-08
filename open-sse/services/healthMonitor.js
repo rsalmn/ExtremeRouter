@@ -58,12 +58,30 @@ export function recordHealthSample(provider, { success, latencyMs, status }, set
 }
 
 const emitTimers = {};
+// Track last known success rate per provider for degradation detection.
+const lastSuccessRate = {};
 function scheduleHealthEmit(provider) {
   if (emitTimers[provider]) clearTimeout(emitTimers[provider]);
   emitTimers[provider] = setTimeout(() => {
     delete emitTimers[provider];
     const health = getProviderHealth(provider);
-    if (health) healthEmitter.emit("health:update", health);
+    if (health) {
+      healthEmitter.emit("health:update", health);
+      // Health degradation alert: success rate dropped below 70% from a healthy state
+      const current = health.successRate;
+      const prev = lastSuccessRate[provider] ?? 1;
+      if (current < 0.7 && prev >= 0.7 && health.total >= 5) {
+        import("@/shared/services/alertService.js")
+          .then(({ dispatchAlert }) => dispatchAlert("health_degraded", {
+            provider,
+            successRate: Math.round(current * 100),
+            avgLatencyMs: health.avgLatencyMs,
+            message: `Provider "${provider}" health degraded — success rate dropped to ${Math.round(current * 100)}% (from ${Math.round(prev * 100)}%).`,
+          }))
+          .catch(() => {});
+      }
+      lastSuccessRate[provider] = current;
+    }
   }, 500); // coalesce bursts — max 2 updates/sec per provider
 }
 

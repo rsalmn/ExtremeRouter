@@ -1134,6 +1134,114 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {/* Webhook / Alert Settings */}
+      <Card>
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold text-text-main">Webhook Alerts</h3>
+          <p className="text-xs text-text-muted mt-0.5">Get notified when providers go down, get rate-limited, or health degrades.</p>
+        </div>
+        <div className="flex flex-col gap-4">
+          <Toggle
+            checked={settings.webhookEnabled === true}
+            onChange={async (checked) => {
+              try {
+                await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ webhookEnabled: checked }) });
+                setSettings(prev => ({ ...prev, webhookEnabled: checked }));
+              } catch {}
+            }}
+            label="Enable Webhook Alerts"
+          />
+          {settings.webhookEnabled === true && (
+            <>
+              <Input
+                label="Discord Webhook URL"
+                type="text"
+                value={settings.webhookDiscordUrl || ""}
+                onChange={async (e) => {
+                  const val = e.target.value;
+                  setSettings(prev => ({ ...prev, webhookDiscordUrl: val }));
+                  try { await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ webhookDiscordUrl: val }) }); } catch {}
+                }}
+                placeholder="https://discord.com/api/webhooks/..."
+                className="flex-1"
+              />
+              <div className="flex gap-3">
+                <Input
+                  label="Telegram Bot Token"
+                  type="password"
+                  value={settings.webhookTelegramToken || ""}
+                  onChange={async (e) => {
+                    const val = e.target.value;
+                    setSettings(prev => ({ ...prev, webhookTelegramToken: val }));
+                    try { await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ webhookTelegramToken: val }) }); } catch {}
+                  }}
+                  placeholder="123456:ABC-DEF..."
+                  className="flex-1"
+                />
+                <Input
+                  label="Telegram Chat ID"
+                  type="text"
+                  value={settings.webhookTelegramChatId || ""}
+                  onChange={async (e) => {
+                    const val = e.target.value;
+                    setSettings(prev => ({ ...prev, webhookTelegramChatId: val }));
+                    try { await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ webhookTelegramChatId: val }) }); } catch {}
+                  }}
+                  placeholder="-1001234567890"
+                  className="flex-1"
+                />
+              </div>
+              <Input
+                label="Generic Webhook URL"
+                type="text"
+                value={settings.webhookGenericUrl || ""}
+                onChange={async (e) => {
+                  const val = e.target.value;
+                  setSettings(prev => ({ ...prev, webhookGenericUrl: val }));
+                  try { await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ webhookGenericUrl: val }) }); } catch {}
+                }}
+                placeholder="https://your-server.com/webhook"
+                className="flex-1"
+              />
+              <div className="flex flex-wrap gap-3">
+                {[
+                  { key: "providerDown", label: "Provider Down" },
+                  { key: "rateLimited", label: "Rate Limited" },
+                  { key: "healthDegraded", label: "Health Degraded" },
+                ].map(evt => (
+                  <Toggle
+                    key={evt.key}
+                    size="sm"
+                    checked={settings.webhookAlertEvents?.[evt.key] === true}
+                    onChange={async (checked) => {
+                      const updated = { ...settings.webhookAlertEvents, [evt.key]: checked };
+                      setSettings(prev => ({ ...prev, webhookAlertEvents: updated }));
+                      try { await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ webhookAlertEvents: updated }) }); } catch {}
+                    }}
+                    label={evt.label}
+                  />
+                ))}
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="send"
+                onClick={async () => {
+                  try {
+                    const res = await fetch("/api/alerts/test", { method: "POST" });
+                    const data = await res.json();
+                    if (data.success) alert("Test alert sent! Check your configured channels.");
+                    else alert("Failed to send test alert.");
+                  } catch { alert("Failed to send test alert."); }
+                }}
+              >
+                Send Test Alert
+              </Button>
+            </>
+          )}
+        </div>
+      </Card>
+
       <LanguageSwitcher
         hideTrigger
         isOpen={langOpen}

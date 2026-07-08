@@ -122,6 +122,8 @@ import p119 from "./xai.js";
 import p120 from "./xiaomi-mimo.js";
 import p121 from "./xiaomi-tokenplan.js";
 import p122 from "./youcom.js";
+import p123 from "./zenmux-free.js";
+import p124 from "./api-airforce.js";
 
 export default [
   p0,
@@ -246,5 +248,7 @@ export default [
   p119,
   p120,
   p121,
-  p122
+  p122,
+  p123,
+  p124
 ];

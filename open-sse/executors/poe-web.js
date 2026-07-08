@@ -16,6 +16,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
 import { sseChunk } from "../utils/sse.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { tlsFetch } from "../utils/tlsClient.js";
 
 // NOTE: buildTransport() in providers/index.js flattens `transport` to the top level, so the
 // baseUrl lives at PROVIDERS["poe-web"].baseUrl (not .transport.baseUrl).
@@ -153,7 +154,7 @@ export class PoeWebExecutor extends BaseExecutor {
 
     let upstream;
     try {
-      upstream = await proxyAwareFetch(
+      upstream = await tlsFetch(
         GQL_URL,
         { method: "POST", headers: reqHeaders, body: JSON.stringify(gqlBody), signal },
         proxyOptions

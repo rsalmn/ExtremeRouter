@@ -3,6 +3,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
 import { sseChunk } from "../utils/sse.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { tlsFetch } from "../utils/tlsClient.js";
 
 // HuggingChatExecutor — HuggingChat (huggingface.co/chat) Web Provider.
 //
@@ -48,13 +49,17 @@ function stripCookieInputPrefix(rawValue) {
 }
 
 // Build the `Cookie` header value from whatever the user pasted.
-//   - full blob with `=`: forwarded as-is (minus a `Cookie:`/`bearer ` prefix)
-//   - bare value (no `=`): wrapped as `hf-chat=<value>`
-// Mirrors OmniRoute's normalizeSessionCookieHeader.
+// HuggingFace sits behind AWS WAF (CloudFront) which requires `aws-waf-token` and
+// `token` cookies alongside `hf-chat`. Forward the FULL cookie jar when the user
+// pastes it; only wrap bare values as `hf-chat=<value>` (which won't pass WAF but
+// is better than nothing).
 function normalizeHuggingChatCookieHeader(apiKey) {
   const normalized = stripCookieInputPrefix(apiKey);
   if (!normalized) return "";
+  // Full cookie blob (contains "=" and likely multiple cookies) → forward as-is.
+  // This preserves aws-waf-token, token, hf-chat, and other required cookies.
   if (normalized.includes("=")) return normalized;
+  // Bare value → wrap as hf-chat (will work only if WAF is not active).
   return `${DEFAULT_COOKIE_NAME}=${normalized}`;
 }
 
@@ -201,7 +206,7 @@ function extractInitialParentMessageId(value) {
 }
 
 async function fetchInitialParentMessageId(conversationId, headers, proxyOptions, signal) {
-  const res = await proxyAwareFetch(
+  const res = await tlsFetch(
     `${API_CONVERSATIONS_URL}/${conversationId}`,
     { method: "GET", headers, signal },
     proxyOptions
@@ -527,6 +532,15 @@ export class HuggingChatExecutor extends BaseExecutor {
       "User-Agent": USER_AGENT,
       Origin: HUGGINGFACE_BASE,
       Referer: `${HUGGINGFACE_BASE}/chat/`,
+      Accept: "application/json",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Sec-Ch-Ua": '"Chromium";v="149", "Not(A:Brand";v="24"',
+      "Sec-Ch-Ua-Mobile": "?0",
+      "Sec-Ch-Ua-Platform": '"Linux"',
+      "Sec-Fetch-Dest": "empty",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "same-origin",
+      "Priority": "u=1, i",
     };
 
     // -- Step 1: Create conversation ----------------------------------------
@@ -535,7 +549,7 @@ export class HuggingChatExecutor extends BaseExecutor {
       const createBody = { model: resolvedModel };
       if (systemPrompt) createBody.preprompt = systemPrompt;
 
-      const createRes = await proxyAwareFetch(
+      const createRes = await tlsFetch(
         CONVERSATION_URL,
         {
           method: "POST",
@@ -641,7 +655,7 @@ export class HuggingChatExecutor extends BaseExecutor {
 
     let upstreamResponse;
     try {
-      upstreamResponse = await proxyAwareFetch(
+      upstreamResponse = await tlsFetch(
         messageUrl,
         {
           method: "POST",

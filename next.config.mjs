@@ -13,7 +13,7 @@ const proxyClientMaxBodySize = process.env.EXTREMEROUTER_PROXY_CLIENT_MAX_BODY_S
 const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   output: "standalone",
-  serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite"],
+  serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite", "wreq-js"],
   turbopack: {
     root: tracingRoot
   },

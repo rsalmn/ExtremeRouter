@@ -1,18 +1,15 @@
 // HuggingChat — web-cookie reverse of the Hugging Face consumer chat app
 // (huggingface.co/chat).
 //
-// Unlike an API-key provider, this is the FREE consumer web chat. It authenticates
-// via an `hf-chat` session cookie. The HuggingChatExecutor
-// (open-sse/executors/huggingchat.js) bridges the SvelteKit web API to an
-// OpenAI-compatible interface by:
-//   1. POST /chat/conversation { model } -> { conversationId }
-//   2. GET  /chat/api/v2/conversations/{id} -> { rootMessageId }
-//   3. POST /chat/conversation/{id} (multipart) -> JSONL stream of MessageUpdate
-//      objects, translated into OpenAI chat.completion.chunk frames.
+// STATUS: ANTI-BOT — HuggingFace sits behind AWS WAF (CloudFront) which requires
+// a JavaScript-challenge-solved `aws-waf-token` cookie bound to the browser's TLS
+// fingerprint. Node.js fetch (even with TLS impersonation) cannot solve the JS
+// challenge or match the browser fingerprint. Requests return an HTML challenge
+// page instead of the API JSON response. A headless browser (Playwright/Puppeteer)
+// integration would be needed to bypass this — tracked as a future project.
 //
-// Auth input: the FULL cookie string from huggingface.co/chat (DevTools →
-// Application → Cookies), or just the `hf-chat` cookie value. A bare value with
-// no `=` is wrapped as `hf-chat=<value>`; a full blob is forwarded as-is.
+// The executor code is fully functional for when the WAF challenge is solved
+// (e.g. via browser-backed chat). The model catalog is kept for reference.
 export default {
   id: "huggingchat",
   priority: 60,
@@ -30,12 +27,13 @@ export default {
     notice: {
       signupUrl: "https://huggingface.co/chat",
       apiKeyUrl: "https://huggingface.co/chat",
-      text: "HuggingChat is FREE. Log in at huggingface.co/chat, then open DevTools → Application → Cookies and copy the hf-chat cookie value (or paste the full cookie string). No API key or payment required. Responses are streamed from the web backend and translated to OpenAI format.",
+      text: "⚠️ ANTI-BOT: HuggingFace is behind AWS WAF which blocks non-browser requests. Even with valid cookies (hf-chat + token + aws-waf-token), server-side requests are rejected. This provider may not work until a headless browser integration is added. Consider using HuggingFace Inference API (API key) as an alternative.",
     },
   },
   category: "webCookie",
   authType: "cookie",
-  authHint: "Paste your huggingface.co/chat cookie (full Cookie header or just the hf-chat value).",
+  comingSoon: true,
+  authHint: "Paste the FULL cookie string from huggingface.co/chat. Note: AWS WAF may block server-side requests regardless of cookie validity.",
   transport: {
     // Base of the HuggingChat web API. The executor builds full per-call URLs from this.
     baseUrl: "https://huggingface.co",

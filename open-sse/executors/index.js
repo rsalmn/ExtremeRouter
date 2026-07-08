@@ -27,6 +27,8 @@ import { DeepSeekWebExecutor } from "./deepseek-web.js";
 import { QwenWebExecutor } from "./qwen-web.js";
 import { KimiWebExecutor } from "./kimi-web.js";
 import { BlackboxWebExecutor } from "./blackbox-web.js";
+import { ZenmuxFreeExecutor } from "./zenmux-free.js";
+import { ApiAirforceExecutor } from "./api-airforce.js";
 import { T3ChatWebExecutor } from "./t3-web.js";
 import { DuckDuckGoWebExecutor } from "./duckduckgo-web.js";
 import { VeniceWebExecutor } from "./venice-web.js";
@@ -95,6 +97,8 @@ const executors = {
   "gemini-web": new GeminiWebExecutor(),
   // Web-cookie providers (ported from OmniRoute — batch 2)
   huggingchat: new HuggingChatExecutor(),
+  "zenmux-free": new ZenmuxFreeExecutor(),
+  "api-airforce": new ApiAirforceExecutor(),
   lmarena: new LMArenaExecutor(),
   puter: new PuterExecutor(),
   pollinations: new PollinationsExecutor(),
@@ -158,6 +162,8 @@ export { ChatGptWebExecutor } from "./chatgpt-web.js";
 export { GeminiWebExecutor } from "./gemini-web.js";
 // Web-cookie providers (ported from OmniRoute — batch 2)
 export { HuggingChatExecutor } from "./huggingchat.js";
+export { ZenmuxFreeExecutor } from "./zenmux-free.js";
+export { ApiAirforceExecutor } from "./api-airforce.js";
 export { LMArenaExecutor } from "./lmarena.js";
 export { PuterExecutor } from "./puter.js";
 export { PollinationsExecutor } from "./pollinations.js";

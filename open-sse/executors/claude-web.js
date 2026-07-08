@@ -21,6 +21,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
 import { sseChunk } from "../utils/sse.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { tlsFetch } from "../utils/tlsClient.js";
 
 const CLAUDE_WEB_API_BASE = PROVIDERS["claude-web"].baseUrl; // https://claude.ai/api
 const CLAUDE_WEB_ORGS_URL = `${CLAUDE_WEB_API_BASE}/organizations`;
@@ -178,7 +179,7 @@ function transformToClaude(body, model) {
 // GET /api/organizations → first org's uuid/id. Used to build the completion URL.
 async function getOrganizationId(cookieHeader, deviceId, proxyOptions, signal) {
   try {
-    const response = await proxyAwareFetch(
+    const response = await tlsFetch(
       CLAUDE_WEB_ORGS_URL,
       { method: "GET", headers: { ...getBrowserHeaders(deviceId), Cookie: cookieHeader }, signal },
       proxyOptions
@@ -370,7 +371,7 @@ export class ClaudeWebExecutor extends BaseExecutor {
 
     let response;
     try {
-      response = await proxyAwareFetch(
+      response = await tlsFetch(
         completionUrl,
         { method: "POST", headers, body: JSON.stringify(claudePayload), signal },
         proxyOptions

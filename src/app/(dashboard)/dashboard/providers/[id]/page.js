@@ -20,6 +20,7 @@ import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
+import VaultPoolBadge from "./VaultPoolBadge";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -1378,7 +1379,10 @@ export default function ProviderDetailPage() {
       ) : (
         <Card>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-semibold">Connections</h2>
+            <div className="flex flex-col gap-2">
+              <h2 className="text-lg font-semibold">Connections</h2>
+              <VaultPoolBadge providerId={providerId} />
+            </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
               {connections.length > 0 && proxyPools.length > 0 && (
                 <Button

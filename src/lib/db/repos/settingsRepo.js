@@ -54,6 +54,18 @@ const DEFAULT_SETTINGS = {
   cavemanLevel: "full",
   ponytailEnabled: false,
   ponytailLevel: "full",
+  // Webhook / Alert System
+  webhookEnabled: false,
+  webhookDiscordUrl: "",
+  webhookTelegramToken: "",
+  webhookTelegramChatId: "",
+  webhookGenericUrl: "",
+  webhookAlertEvents: {
+    providerDown: true,
+    rateLimited: true,
+    healthDegraded: true,
+    budgetExceeded: false,
+  },
 };
 
 async function readRaw() {

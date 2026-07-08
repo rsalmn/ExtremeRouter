@@ -18,6 +18,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
 import { sseChunk } from "../utils/sse.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { tlsFetch } from "../utils/tlsClient.js";
 
 const GEMINI_URL = PROVIDERS["gemini-web"].baseUrl; // https://gemini.google.com/app
 const GEMINI_STREAM_URL = "https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate";
@@ -191,7 +192,7 @@ export class GeminiWebExecutor extends BaseExecutor {
 
     let response;
     try {
-      response = await proxyAwareFetch(
+      response = await tlsFetch(
         GEMINI_STREAM_URL,
         { method: "POST", headers, body: requestBody, signal },
         proxyOptions

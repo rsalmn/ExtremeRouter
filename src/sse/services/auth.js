@@ -65,6 +65,36 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
+      // Vault fallback: admin-provided credentials for providers in the vault seed.
+      // Used when a user has no own connection but the maintainer shipped a shared key
+      // (e.g. bundled Xiaomi MiMo key pool for npm-distributed builds). Failures here
+      // are silent — vault unset / tampered / pool fully rate-limited all collapse to
+      // "no credentials". Pool rotation is handled inside credentialVault.
+      try {
+        const { getAdminCredential } = await import("open-sse/services/credentialVault.js");
+        const vault = getAdminCredential(providerId);
+        if (vault) {
+          log.info("AUTH", `${provider} | using vault key ${vault.keyName} (no user connection)`);
+          return {
+            // Use connectionId (not id) to match the shape of normal connections,
+            // so handlers that read credentials.connectionId work uniformly. The
+            // literal "vault" is what markAccountUnavailable keys on for pool
+            // rotation; the specific pool key is tracked inside credentialVault
+            // via LAST_ISSUED, so no keyName needs to leak into the id.
+            connectionId: "vault",
+            id: "vault",
+            connectionName: `Vault · ${vault.keyName}`,
+            authType: "apikey",
+            apiKey: vault.key,
+            accessToken: null,
+            refreshToken: null,
+            providerSpecificData: {},
+            isActive: true,
+          };
+        }
+      } catch {
+        // vault module unavailable — fall through to "no credentials"
+      }
       log.warn("AUTH", `No credentials for ${provider}`);
       return null;
     }
@@ -210,7 +240,31 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
 export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
-  if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+  if (!connectionId || connectionId === "noauth") {
+    // noauth is a virtual shared connection — locking it would penalize ALL users
+    // for one user's rate-limit. Let the per-request retry/circuit-breaker handle
+    // transient failures instead.
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+  if (connectionId === "vault") {
+    // Vault pool key got rate-limited. Mark THIS specific key (not the whole pool)
+    // so the next request rotates to a fresh key. shouldFallback=true lets the
+    // caller retry immediately with a different key from the pool.
+    // credentialVault tracks the last-issued key per provider, so we don't need
+    // to thread the keyName through every handler signature.
+    try {
+      const { markVaultKeyRateLimited } = await import("open-sse/services/credentialVault.js");
+      if (provider) {
+        // Use resetsAtMs if the upstream gave us a precise Retry-After, else default.
+        const cooldown = resetsAtMs && resetsAtMs > Date.now()
+          ? Math.min(resetsAtMs - Date.now(), 300_000)
+          : 60_000;
+        markVaultKeyRateLimited(provider, null, cooldown);
+        log.info("AUTH", `${provider} | vault key rate-limited [${status}], rotating to next pool key in ${Math.round(cooldown / 1000)}s`);
+      }
+    } catch { /* vault unavailable — no-op */ }
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
@@ -246,6 +300,19 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     console.error(`❌ ${provider} [${status}]: ${reason}`);
   }
 
+  // Fire webhook alert for rate-limit / quota exhaustion
+  if (provider && (status === 429 || status === 403)) {
+    try {
+      const { dispatchAlert } = await import("@/shared/services/alertService.js");
+      dispatchAlert("rate_limited", {
+        provider,
+        status,
+        model: lockKey,
+        message: `Provider "${provider}" rate-limited (HTTP ${status}) — ${reason}. Account "${connName}" locked for ${Math.round(cooldownMs / 1000)}s.`,
+      });
+    } catch { /* alert service not loaded */ }
+  }
+
   return { shouldFallback: true, cooldownMs };
 }
 
@@ -259,7 +326,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
  * @param {string|null} model - model that succeeded
  */
 export async function clearAccountError(connectionId, currentConnection, model = null) {
-  if (!connectionId || connectionId === "noauth") return;
+  if (!connectionId || connectionId === "noauth" || connectionId === "vault") return;
   const conn = currentConnection._connection || currentConnection;
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));

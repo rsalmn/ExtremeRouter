@@ -76,7 +76,32 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ connections: safeConnections });
+    // Inject virtual vault-pool connections for providers that have an
+    // admin-provided shared key pool (e.g. bundled Xiaomi MiMo). This makes the
+    // provider appear as "connected" in the Combos page (which filters by
+    // active providers from /api/providers) so its models are selectable, even
+    // when the user has not added their own key. Sensitive fields stay null.
+    let vaultConnections = [];
+    try {
+      const { getActiveVaultProviders } = await import("open-sse/services/credentialVault.js");
+      const activeVaultProviders = getActiveVaultProviders();
+      vaultConnections = activeVaultProviders
+        .filter((pid) => !connections.some((c) => c.provider === pid))
+        .map((pid) => ({
+          id: `vault-${pid}`,
+          provider: pid,
+          authType: "apikey",
+          name: "Admin (Vault Pool)",
+          isActive: true,
+          apiKey: undefined,
+          accessToken: undefined,
+          refreshToken: undefined,
+          idToken: undefined,
+          providerSpecificData: { vaultPool: true },
+        }));
+    } catch { /* vault unavailable — no-op */ }
+
+    return NextResponse.json({ connections: [...safeConnections, ...vaultConnections] });
   } catch (error) {
     console.log("Error fetching providers:", error);
     return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });

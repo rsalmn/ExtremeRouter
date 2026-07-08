@@ -234,6 +234,31 @@ export async function buildModelsList(kindFilter) {
     }
   }
 
+  // Inject virtual vault-pool "connections" for providers that have an
+  // admin-provided shared key pool (e.g. bundled Xiaomi MiMo). This makes the
+  // provider's models visible in /v1/models AND selectable in combos/playground
+  // even when the user has no own connection. At request time, auth.js falls
+  // back to the same vault pool to actually route the call.
+  let activeVaultProviders = [];
+  try {
+    const { getActiveVaultProviders } = await import("open-sse/services/credentialVault.js");
+    activeVaultProviders = getActiveVaultProviders();
+  } catch { /* vault unavailable — no-op */ }
+  for (const providerId of activeVaultProviders) {
+    if (!activeConnectionByProvider.has(providerId)) {
+      // Minimal stub: enough for the model loop to read providerId + treat as
+      // an active apikey connection. apiKey is intentionally null here — auth.js
+      // resolves the real key from the pool at request time.
+      activeConnectionByProvider.set(providerId, {
+        provider: providerId,
+        authType: "apikey",
+        apiKey: null,
+        isActive: true,
+        providerSpecificData: { vaultPool: true },
+      });
+    }
+  }
+
   const models = [];
 
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.

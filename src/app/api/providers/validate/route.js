@@ -1055,6 +1055,29 @@ export async function POST(request) {
           break;
         }
 
+        case "zenmux-free": {
+          const cookie = apiKey.replace(/^Cookie:\s*/i, "");
+          const ctoken = (cookie.match(/ctoken=([^;]+)/) || [])[1];
+          if (!ctoken) {
+            isValid = false;
+            error = "No ctoken found in cookies. Export ALL cookies from zenmux.ai (must include ctoken).";
+            break;
+          }
+          const res = await fetch(`https://zenmux.ai/api/anthropic/v1/models?ctoken=${ctoken}`, {
+            method: "GET",
+            headers: {
+              Cookie: cookie,
+              "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+              Origin: "https://zenmux.ai",
+              Referer: "https://zenmux.ai/platform/chat",
+            },
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired zenmux.ai cookies — re-export all cookies.";
+          } else { isValid = true; }
+          break;
+        }
         case "huggingchat": {
           let cookie = apiKey.replace(/^Cookie:\s*/i, "");
           if (!cookie.includes("=")) cookie = `hf-chat=${cookie}`;

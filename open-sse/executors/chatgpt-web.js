@@ -31,6 +31,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
 import { sseChunk } from "../utils/sse.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { tlsFetch } from "../utils/tlsClient.js";
 
 const CHATGPT_BASE = "https://chatgpt.com";
 const SESSION_URL = `${CHATGPT_BASE}/api/auth/session`;
@@ -194,7 +195,7 @@ async function exchangeSession(cookie, signal, proxyOptions) {
     Accept: "application/json",
     Cookie: buildSessionCookieHeader(cookie),
   };
-  const response = await proxyAwareFetch(
+  const response = await tlsFetch(
     SESSION_URL,
     { method: "GET", headers, signal },
     proxyOptions
@@ -238,7 +239,7 @@ async function fetchDpl(cookie, signal, proxyOptions) {
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     Cookie: buildSessionCookieHeader(cookie),
   };
-  const response = await proxyAwareFetch(`${CHATGPT_BASE}/`, { method: "GET", headers, signal }, proxyOptions);
+  const response = await tlsFetch(`${CHATGPT_BASE}/`, { method: "GET", headers, signal }, proxyOptions);
   const html = await response.text().catch(() => "");
   const dplMatch = html.match(/data-build="([^"]+)"/);
   const dpl = dplMatch ? `dpl=${dplMatch[1]}` : `dpl=${OAI_CLIENT_VERSION.replace(/^prod-/, "")}`;
@@ -319,7 +320,7 @@ async function prepareChatRequirements(accessToken, accountId, sessionId, device
   if (accountId) headers["chatgpt-account-id"] = accountId;
 
   // Stage 1: POST /chat-requirements/prepare → { prepare_token, ... }
-  const prepResp = await proxyAwareFetch(
+  const prepResp = await tlsFetch(
     SENTINEL_PREPARE_URL,
     { method: "POST", headers, body: JSON.stringify({ p: prekey }), signal },
     proxyOptions
@@ -336,7 +337,7 @@ async function prepareChatRequirements(accessToken, accountId, sessionId, device
 
   // Stage 2: POST /chat-requirements with the prepare_token → real chat-requirements token.
   const crBody = { p: prekey, prepare_token: prepData.prepare_token };
-  const crResp = await proxyAwareFetch(
+  const crResp = await tlsFetch(
     SENTINEL_CR_URL,
     { method: "POST", headers, body: JSON.stringify(crBody), signal },
     proxyOptions
@@ -748,7 +749,7 @@ export class ChatGptWebExecutor extends BaseExecutor {
 
     let response;
     try {
-      response = await proxyAwareFetch(
+      response = await tlsFetch(
         CONV_URL,
         { method: "POST", headers, body: JSON.stringify(cgptBody), signal },
         proxyOptions

@@ -8,6 +8,7 @@ import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifi
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, PageHeader } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import ComboTemplates from "./components/ComboTemplates";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -166,6 +167,13 @@ export default function CombosPage() {
           <div><span className="font-semibold text-text-main">Capacity auto-switch</span> — routes multimodal inputs to a capable model first</div>
         </div>
       </div>
+
+      {/* Combo Templates */}
+      <ComboTemplates
+        combos={combos}
+        connections={activeProviders}
+        onApply={fetchData}
+      />
 
       {/* Combos List */}
       {combos.length === 0 ? (
