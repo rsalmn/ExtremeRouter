@@ -5,6 +5,7 @@ import { autoDetectFilter } from "../../open-sse/rtk/autodetect.js";
 import { buildOutput } from "../../open-sse/rtk/filters/buildOutput.js";
 import { gitDiff } from "../../open-sse/rtk/filters/gitDiff.js";
 import { gitStatus } from "../../open-sse/rtk/filters/gitStatus.js";
+import { gitLog } from "../../open-sse/rtk/filters/gitLog.js";
 import { safeApply } from "../../open-sse/rtk/applyFilter.js";
 import { compressMessages } from "../../open-sse/rtk/index.js";
 import { DETECT_WINDOW, MIN_COMPRESS_SIZE } from "../../open-sse/rtk/constants.js";
@@ -353,5 +354,61 @@ describe("PR #1175 - pathological", () => {
     // buildOutput would throw on null.split() — safeApply must catch
     const out = safeApply(buildOutput, null);
     expect(out).toBe(null);
+  });
+});
+
+// ===== 9. git-log filter (new) =====
+describe("gitLog filter (adversarial)", () => {
+  it("does not misdetect npm error output as git-log", () => {
+    const input = "npm error code 1\nnpm error path /app\nnpm error command failed\n";
+    // npm error lines don't match git-log pattern (no hex sha prefix)
+    expect(autoDetectFilter(input)).not.toBe(gitLog);
+  });
+
+  it("CRLF line endings handled correctly (oneline)", () => {
+    const input = "abc1234 feat: x\r\ndef5678 docs: y\r\n";
+    const out = gitLog(input);
+    expect(out).toContain("abc1234");
+    expect(out).toContain("def5678");
+  });
+
+  it("graph mode with merge commit preserved", () => {
+    const input = "* 0123456 (HEAD -> main) Merge: abc def\n| * 789abcd feat: x\n|/\n* fedcba0 init\n";
+    const out = gitLog(input);
+    expect(out).toContain("Merge");
+    expect(out).toContain("feat: x");
+    expect(out).toContain("init");
+  });
+
+  it("never produces empty output for valid git log", () => {
+    const input = "abc1234 feat: commit one\ndef5678 feat: commit two\n";
+    const out = gitLog(input);
+    expect(out.length).toBeGreaterThan(0);
+  });
+
+  it("compressMessages pipeline: git-log detected and compressed", () => {
+    const lines = [];
+    for (let i = 0; i < 60; i++) {
+      lines.push(`${(Math.random().toString(16) + "0".repeat(7)).slice(2, 9)} feat: commit ${i}`);
+    }
+    const big = lines.join("\n");
+    const body = { messages: [{ role: "tool", tool_call_id: "x", content: big }] };
+    const stats = compressMessages(body, true);
+    expect(stats.hits.length).toBe(1);
+    expect(stats.hits[0].filter).toBe("git-log");
+    expect(body.messages[0].content.length).toBeLessThan(big.length);
+  });
+
+  it("pathological: 10000 oneline commits compressed safely", () => {
+    const lines = [];
+    for (let i = 0; i < 10000; i++) {
+      lines.push(`${(Math.random().toString(16) + "0".repeat(7)).slice(2, 9)} commit ${i}`);
+    }
+    const input = lines.join("\n");
+    const out = gitLog(input);
+    expect(typeof out).toBe("string");
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.length).toBeLessThan(input.length);
+    expect(out).toContain("more commits truncated");
   });
 });

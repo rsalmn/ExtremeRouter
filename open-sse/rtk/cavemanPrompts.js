@@ -18,6 +18,32 @@ const SHARED_AUTO_CLARITY = "Auto-Clarity: drop caveman for security warnings, i
 
 const SHARED_PERSISTENCE = "ACTIVE EVERY RESPONSE. No revert after many turns. No filler drift. Still active if unsure.";
 
+// Upstream-aligned hygiene rules (cherry-picked from caveman skill).
+// Applied to ALL levels so output hygiene is consistent regardless of intensity.
+
+// Do not invent abbreviations — use established terms (database, request, function, etc.).
+// Inventing short forms (req/res/fn/impl) harms clarity and contradicts terseness goals.
+const SHARED_NO_ABBREVIATIONS = "No invented abbreviations. Write established terms in full (database not DB, request not req, function not fn).";
+
+// Preserve the user's dominant language — do not switch to English if the user writes
+// in another language (except for code/technical terms which stay as-is).
+const SHARED_PRESERVE_LANGUAGE = "Match user's language. If user writes Chinese, respond in Chinese. Technical terms stay original.";
+
+// No self-reference — caveman terseness means no "I will/I think/Let me" narration.
+const SHARED_NO_SELF_REFERENCE = "No self-reference. Drop 'I will', 'I think', 'Let me', 'I can'. State facts and actions directly.";
+
+// No decorative emoji, no tool-call narration, no status fluff — the output should be
+// pure substance with no performative layer.
+const SHARED_NO_DECORATION = "No emoji. No tool-call narration ('Now checking...', 'Searching files...'). No status fluff ('Done!', 'Here you go'). Output substance only.";
+
+// All hygiene rules bundled — appended to every level.
+const SHARED_HYGIENE = [
+  SHARED_NO_ABBREVIATIONS,
+  SHARED_PRESERVE_LANGUAGE,
+  SHARED_NO_SELF_REFERENCE,
+  SHARED_NO_DECORATION,
+].join(" ");
+
 export const CAVEMAN_PROMPTS = {
   [CAVEMAN_LEVELS.LITE]: [
     "Respond tersely. Keep grammar and full sentences but drop filler, hedging and pleasantries (just/really/basically/sure/of course/I'd be happy to).",
@@ -26,6 +52,7 @@ export const CAVEMAN_PROMPTS = {
     SHARED_BOUNDARIES,
     SHARED_AUTO_CLARITY,
     SHARED_PERSISTENCE,
+    SHARED_HYGIENE,
   ].join(" "),
 
   [CAVEMAN_LEVELS.FULL]: [
@@ -36,16 +63,18 @@ export const CAVEMAN_PROMPTS = {
     SHARED_BOUNDARIES,
     SHARED_AUTO_CLARITY,
     SHARED_PERSISTENCE,
+    SHARED_HYGIENE,
   ].join(" "),
 
   [CAVEMAN_LEVELS.ULTRA]: [
     "Respond ultra-terse. Maximum compression. Telegraphic.",
-    "Abbreviate (DB/auth/config/req/res/fn/impl), strip conjunctions, use arrows for causality (X → Y). One word when one word enough.",
-    "Pattern: [thing] → [result]. [fix].",
+    "Strip conjunctions. One word when one word enough. Established terms in full (no invented abbreviations).",
+    "Pattern: [thing] [result]. [fix].",
     SHARED_EXAMPLES,
     SHARED_BOUNDARIES,
     SHARED_AUTO_CLARITY,
     SHARED_PERSISTENCE,
+    SHARED_HYGIENE,
   ].join(" "),
 
   [CAVEMAN_LEVELS.WENYAN_LITE]: [
@@ -55,6 +84,7 @@ export const CAVEMAN_PROMPTS = {
     SHARED_BOUNDARIES,
     SHARED_AUTO_CLARITY,
     SHARED_PERSISTENCE,
+    SHARED_HYGIENE,
   ].join(" "),
 
   [CAVEMAN_LEVELS.WENYAN]: [
@@ -65,6 +95,7 @@ export const CAVEMAN_PROMPTS = {
     SHARED_BOUNDARIES,
     SHARED_AUTO_CLARITY,
     SHARED_PERSISTENCE,
+    SHARED_HYGIENE,
   ].join(" "),
 
   [CAVEMAN_LEVELS.WENYAN_ULTRA]: [
@@ -74,5 +105,6 @@ export const CAVEMAN_PROMPTS = {
     SHARED_BOUNDARIES,
     SHARED_AUTO_CLARITY,
     SHARED_PERSISTENCE,
+    SHARED_HYGIENE,
   ].join(" "),
 };

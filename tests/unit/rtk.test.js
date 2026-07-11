@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { compressMessages, setRtkEnabled, isRtkEnabled, formatRtkLog } from "../../open-sse/rtk/index.js";
+import { describe, it, expect } from "vitest";
+import { compressMessages, formatRtkLog } from "../../open-sse/rtk/index.js";
 import { gitDiff } from "../../open-sse/rtk/filters/gitDiff.js";
 import { gitStatus } from "../../open-sse/rtk/filters/gitStatus.js";
+import { gitLog } from "../../open-sse/rtk/filters/gitLog.js";
 import { grep } from "../../open-sse/rtk/filters/grep.js";
 import { find } from "../../open-sse/rtk/filters/find.js";
 import { dedupLog } from "../../open-sse/rtk/filters/dedupLog.js";
@@ -53,15 +54,45 @@ function makeFindOutput() {
   return lines.join("\n");
 }
 
-describe("RTK flag", () => {
-  it("default off, toggle works", () => {
-    setRtkEnabled(false);
-    expect(isRtkEnabled()).toBe(false);
-    setRtkEnabled(true);
-    expect(isRtkEnabled()).toBe(true);
-    setRtkEnabled(false);
-  });
-});
+function makeGitLogOneline(count = 60) {
+  const lines = [];
+  for (let i = 0; i < count; i++) {
+    const sha = (Math.random().toString(16) + "0000000000000000000000000000000000000000").slice(2, 42);
+    lines.push(`${sha.slice(0, 7)} (HEAD -> main) feat: commit message number ${i} with some detail`);
+  }
+  return lines.join("\n");
+}
+
+function makeGitLogFull(count = 60) {
+  const lines = [];
+  for (let i = 0; i < count; i++) {
+    const sha = (Math.random().toString(16) + "0000000000000000000000000000000000000000").slice(2, 42);
+    lines.push(`commit ${sha}`);
+    lines.push(`Author: Dev Person <dev@example.com>`);
+    lines.push(`Date:   Mon Jul ${8 - (i % 7)} 12:00:00 2026 +0700`);
+    lines.push(``);
+    lines.push(`    feat: commit ${i} - implement feature X with long description`);
+    lines.push(`    `);
+    lines.push(`    This is a detailed body line with lots of context about the change.`);
+    lines.push(`    Another body line with more detail about edge cases handled.`);
+    lines.push(`    Third body line that should be truncated beyond GIT_LOG_BODY_MAX_LINES.`);
+    lines.push(`    Fourth body line with even more detail that must NOT appear in output.`);
+    lines.push(``);
+  }
+  return lines.join("\n");
+}
+
+function makeGitLogGraph() {
+  return [
+    "*   0123456 (HEAD -> main) Merge pull request #42",
+    "|\\  ",
+    "| * 89abcde feat: add git-log filter",
+    "| * fedcba1 refactor: cleanup constants",
+    "*| 4567890 docs: update README",
+    "|/",
+    "* aabbccd initial commit",
+  ].join("\n");
+}
 
 describe("RTK filters", () => {
   it("gitDiff truncates hunks beyond 100 lines and preserves file header", () => {
@@ -108,6 +139,89 @@ describe("RTK filters", () => {
     expect(out).toContain("duplicate lines");
     expect(out.length).toBeLessThan(input.length);
   });
+
+  it("gitLog: compacts oneline log and truncates beyond cap", () => {
+    const input = makeGitLogOneline(60);
+    const out = gitLog(input);
+    expect(out).toContain("feat: commit message number 0");
+    expect(out).toContain("more commits truncated");
+    expect(out.length).toBeLessThan(input.length);
+  });
+
+  it("gitLog: preserves commit hash + subject in oneline mode", () => {
+    const input = "abc1234 (HEAD -> main) feat: my feature\n";
+    const out = gitLog(input);
+    expect(out).toContain("abc1234");
+    expect(out).toContain("feat: my feature");
+  });
+
+  it("gitLog: compacts full-format log, keeps author + date + subject", () => {
+    const input = makeGitLogFull(3);
+    const out = gitLog(input);
+    expect(out).toContain("Dev Person");
+    expect(out).toContain("feat: commit 0");
+    // body detail lines beyond GIT_LOG_BODY_MAX_LINES (3) should be truncated
+    expect(out).not.toContain("Fourth body line with even more detail");
+    expect(out.length).toBeLessThan(input.length);
+  });
+
+  it("gitLog: truncates long full-format log beyond GIT_LOG_MAX_COMMITS", () => {
+    const input = makeGitLogFull(80);
+    const out = gitLog(input);
+    expect(out).toContain("more commits truncated");
+    expect(out.length).toBeLessThan(input.length);
+  });
+
+  it("gitLog: handles --graph output, strips connector lines", () => {
+    const input = makeGitLogGraph();
+    const out = gitLog(input);
+    expect(out).toContain("Merge pull request");
+    expect(out).toContain("add git-log filter");
+    // pure connector lines like "|\\  " should not appear as standalone entries
+    expect(out).not.toMatch(/^\|\\\s*$/m);
+  });
+
+  it("gitLog: drops embedded diff markers from log bodies", () => {
+    const input = [
+      "commit aabbccdd1234",
+      "Author: Dev <dev@example.com>",
+      "Date:   Mon Jul 8 12:00:00 2026 +0700",
+      "",
+      "    feat: combined log + diff",
+      "",
+      "diff --git a/x b/x",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+    ].join("\n");
+    const out = gitLog(input);
+    expect(out).toContain("aabbccdd");
+    expect(out).toContain("feat: combined log + diff");
+    // diff markers should be dropped (diff has its own filter)
+    expect(out).not.toContain("diff --git");
+    expect(out).not.toContain("@@ -1 +1 @@");
+  });
+
+  it("gitLog: passes through non-git-log input unchanged", () => {
+    const input = "just some random text\nnot a git log at all\n";
+    // No commit-like lines → gitLog returns input unchanged
+    const out = gitLog(input);
+    expect(out).toBe(input);
+  });
+
+  it("gitLog: marks merge commits", () => {
+    const input = [
+      "commit aabbccdd1234",
+      "Merge: fe1dc0a b2e3f4d",
+      "Author: Dev <dev@example.com>",
+      "Date:   Mon Jul 8 12:00:00 2026 +0700",
+      "",
+      "    Merge branch feature into main",
+    ].join("\n");
+    const out = gitLog(input);
+    expect(out).toContain("[merge]");
+    expect(out).toContain("Merge branch feature into main");
+  });
 });
 
 describe("autoDetectFilter", () => {
@@ -116,6 +230,18 @@ describe("autoDetectFilter", () => {
   });
   it("detects git status", () => {
     expect(autoDetectFilter("On branch main\n  modified:   x.js\n").filterName).toBe("git-status");
+  });
+  it("detects git log (oneline format)", () => {
+    expect(autoDetectFilter("abc1234 (HEAD -> main) feat: x\ndef5678 docs: y\n").filterName).toBe("git-log");
+  });
+  it("detects git log (full format)", () => {
+    expect(autoDetectFilter("commit aabbccdd1234\nAuthor: Dev <d@e.com>\nDate:   Mon\n\n    msg\n").filterName).toBe("git-log");
+  });
+  it("does not misdetect single hex-prefixed line as git log (requires >=2)", () => {
+    // A single sha-like line should not trigger git-log (needs >=2 commit lines)
+    // It falls through to dedup-log or null depending on line count
+    const result = autoDetectFilter("abc1234 some lone line\n");
+    expect(result?.filterName).not.toBe("git-log");
   });
   it("detects grep", () => {
     expect(autoDetectFilter("a.js:1:hello\nb.js:2:world\nc.js:3:foo").filterName).toBe("grep");
@@ -245,20 +371,17 @@ describe("safeApply", () => {
 });
 
 describe("compressMessages (disabled)", () => {
-  beforeEach(() => setRtkEnabled(false));
   it("returns null when disabled", () => {
     const body = { messages: [{ role: "tool", tool_call_id: "x", content: makeLongDiff() }] };
-    expect(compressMessages(body)).toBeNull();
+    expect(compressMessages(body, false)).toBeNull();
   });
 });
 
 describe("compressMessages (enabled)", () => {
-  beforeEach(() => setRtkEnabled(true));
-
   it("compresses OpenAI tool message (string content)", () => {
     const big = makeLongDiff();
     const body = { messages: [{ role: "tool", tool_call_id: "call_1", content: big }] };
-    const stats = compressMessages(body);
+    const stats = compressMessages(body, true);
     expect(stats.hits.length).toBeGreaterThan(0);
     expect(body.messages[0].content.length).toBeLessThan(big.length);
     expect(stats.bytesBefore).toBeGreaterThan(stats.bytesAfter);
@@ -272,7 +395,7 @@ describe("compressMessages (enabled)", () => {
         content: [{ type: "tool_result", tool_use_id: "toolu_1", content: big }]
       }]
     };
-    const stats = compressMessages(body);
+    const stats = compressMessages(body, true);
     expect(stats.hits.length).toBeGreaterThan(0);
     expect(body.messages[0].content[0].content.length).toBeLessThan(big.length);
   });
@@ -289,7 +412,7 @@ describe("compressMessages (enabled)", () => {
         }]
       }]
     };
-    const stats = compressMessages(body);
+    const stats = compressMessages(body, true);
     expect(stats.hits.length).toBeGreaterThan(0);
     expect(body.messages[0].content[0].content[0].text.length).toBeLessThan(big.length);
     // short part unchanged
@@ -304,7 +427,7 @@ describe("compressMessages (enabled)", () => {
         content: [{ type: "tool_result", tool_use_id: "toolu_1", content: big, is_error: true }]
       }]
     };
-    const stats = compressMessages(body);
+    const stats = compressMessages(body, true);
     expect(stats.hits.length).toBe(0);
     expect(body.messages[0].content[0].content).toBe(big);
   });
@@ -312,7 +435,7 @@ describe("compressMessages (enabled)", () => {
   it("skips below MIN_COMPRESS_SIZE (<500 bytes)", () => {
     const small = "diff --git a/x b/x\n@@ -1 +1 @@\n+a";
     const body = { messages: [{ role: "tool", tool_call_id: "x", content: small }] };
-    const stats = compressMessages(body);
+    const stats = compressMessages(body, true);
     expect(stats.hits.length).toBe(0);
     expect(body.messages[0].content).toBe(small);
   });
@@ -320,13 +443,13 @@ describe("compressMessages (enabled)", () => {
   it("never produces empty content (R14 guard)", () => {
     const input = "a".repeat(1000);
     const body = { messages: [{ role: "tool", tool_call_id: "x", content: input }] };
-    compressMessages(body);
+    compressMessages(body, true);
     expect(body.messages[0].content.length).toBeGreaterThan(0);
   });
 
   it("skips when body has no messages", () => {
-    expect(compressMessages({})).toBeNull();
-    expect(compressMessages({ messages: null })).toBeNull();
+    expect(compressMessages({}, true)).toBeNull();
+    expect(compressMessages({ messages: null }, true)).toBeNull();
   });
 
   it("handles mix of messages without crashing", () => {
@@ -339,9 +462,27 @@ describe("compressMessages (enabled)", () => {
         { role: "user", content: [{ type: "text", text: "next" }] }
       ]
     };
-    const stats = compressMessages(body);
+    const stats = compressMessages(body, true);
     expect(stats).not.toBeNull();
     expect(stats.hits.length).toBeGreaterThan(0);
+  });
+
+  it("compresses git log tool output via autodetect", () => {
+    const big = makeGitLogOneline(60);
+    const body = { messages: [{ role: "tool", tool_call_id: "x", content: big }] };
+    const stats = compressMessages(body, true);
+    expect(stats.hits.length).toBeGreaterThan(0);
+    expect(stats.hits[0].filter).toBe("git-log");
+    expect(body.messages[0].content.length).toBeLessThan(big.length);
+  });
+
+  it("compresses full-format git log via autodetect", () => {
+    const big = makeGitLogFull(40);
+    const body = { messages: [{ role: "tool", tool_call_id: "x", content: big }] };
+    const stats = compressMessages(body, true);
+    expect(stats.hits.length).toBeGreaterThan(0);
+    expect(stats.hits[0].filter).toBe("git-log");
+    expect(body.messages[0].content.length).toBeLessThan(big.length);
   });
 });
 

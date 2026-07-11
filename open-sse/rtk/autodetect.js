@@ -1,9 +1,10 @@
 // Port of auto_detect_filter (rtk/src/cmds/system/pipe_cmd.rs:132-188) + JS extras
-// Order: git-diff → git-status → build-output → grep → find → tree → ls → search-list
+// Order: git-diff → git-status → git-log → build-output → grep → find → tree → ls → search-list
 //        → read-numbered → dedup-log → smart-truncate → null
 import { DETECT_WINDOW, READ_NUMBERED_MIN_HIT_RATIO, SMART_TRUNCATE_MIN_LINES } from "./constants.js";
 import { gitDiff } from "./filters/gitDiff.js";
 import { gitStatus } from "./filters/gitStatus.js";
+import { gitLog } from "./filters/gitLog.js";
 import { buildOutput } from "./filters/buildOutput.js";
 import { grep } from "./filters/grep.js";
 import { find } from "./filters/find.js";
@@ -18,6 +19,9 @@ const RE_GIT_DIFF = /^diff --git /m;
 const RE_GIT_DIFF_HUNK = /^@@ /m;
 const RE_GIT_STATUS = /^On branch |^nothing to commit|^Changes (not |to be )|^Untracked files:/m;
 const RE_PORCELAIN = /^[ MADRCU?!][ MADRCU?!] \S/m;
+// git log: "commit <sha>" header (full format) OR oneline "<sha> <subject>".
+// Graph mode prefixes (* | / \) are stripped before the match.
+const RE_GIT_LOG = /^(?:[*|\/\\ ]*)?(?:commit [0-9a-f]{4,40}|[0-9a-f]{7,40} (?:\([^)]+\) )?.+)/m;
 const RE_BUILD_OUTPUT = /^(npm (warn|error|ERR!)|yarn (warn|error)|\s*Compiling\s+\S+|\s*Downloading\s+\S+|added \d+ package|\[ERROR\]|BUILD (SUCCESS|FAILED)|\s*Finished\s+|Successfully (installed|built)|ERROR:)/im;
 const RE_TREE_GLYPH = /[├└]──|│  /;
 const RE_LS_ROW = /^[-dlbcps][rwx-]{9}/m;
@@ -34,6 +38,11 @@ export function autoDetectFilter(text) {
   if (RE_BUILD_OUTPUT.test(head)) return buildOutput;
 
   if (isMostlyPorcelain(head)) return gitStatus;
+
+  // git log: detect after porcelain (short-sha oneline lines could false-positive
+  // on random hex text, so require >=2 commit-like lines). Handles both the
+  // full "commit <sha>\nAuthor:..." format and oneline "<sha> <subject>".
+  if (countGitLogLines(head) >= 2) return gitLog;
 
   const lines = head.split("\n");
   const nonEmpty = lines.filter(l => l.trim().length > 0);
@@ -108,4 +117,26 @@ function isLineNumbered(lines) {
 function countMatches(text, re) {
   const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
   return (text.match(g) || []).length;
+}
+
+// Count lines that look like git-log commit entries (oneline or full format).
+// Oneline: "<7+ hex> <subject>" (optionally with "(refs)" and graph prefix).
+// Full: "commit <sha>" (optionally with graph prefix). Author:/Date: lines
+// count as supporting evidence so a single full-format commit (which has
+// only 1 "commit" line but Author + Date) still reaches the >=2 threshold.
+function countGitLogLines(head) {
+  let hits = 0;
+  for (const line of head.split("\n")) {
+    const t = line.trimStart();
+    // Skip graph connector-only lines (|, /, \, *, space).
+    if (/^[*|\/\\ ]+$/.test(t)) continue;
+    // Full format: "commit <sha>"
+    if (/^commit [0-9a-f]{4,40}/.test(t)) { hits++; continue; }
+    // Full format support lines: "Author:" / "Date:" / "Merge:"
+    if (/^(Author|Date|Merge):\s/.test(t)) { hits++; continue; }
+    // Oneline format: "<7+ hex chars> <subject>" — but NOT a porcelain line
+    // (porcelain has a 2-char status column, not a hex prefix).
+    if (/^[0-9a-f]{7,40} /.test(t)) { hits++; continue; }
+  }
+  return hits;
 }
