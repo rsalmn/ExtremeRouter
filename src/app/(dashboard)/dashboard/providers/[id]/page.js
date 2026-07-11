@@ -21,6 +21,8 @@ import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 import VaultPoolBadge from "./VaultPoolBadge";
+import ZenmuxPlanSelector from "./ZenmuxPlanSelector";
+import { useNewBadge } from "@/shared/hooks/useNewBadge";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -38,6 +40,8 @@ export default function ProviderDetailPage() {
   const router = useRouter();
   const providerId = params.id;
   const { getCaps } = useModelCaps();
+  const { markSeen: markProviderSeen } = useNewBadge("providers");
+  useEffect(() => { if (providerId) markProviderSeen(providerId); }, [providerId, markProviderSeen]);
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
@@ -1464,6 +1468,18 @@ export default function ProviderDetailPage() {
                   </div>
                 )}
               </div>
+              {/* ZenMux plan selector — only for zenmux-free provider */}
+              {providerId === "zenmux-free" && connections.length > 0 && (
+                <ZenmuxPlanSelector
+                  connectionId={connections[0].id}
+                  cookie={connections[0].apiKey || ""}
+                  currentPlan={connections[0].providerSpecificData?.zenmuxPlan || "free"}
+                  onPlanChanged={() => {
+                    // Refresh connections so the new plan is reflected.
+                    fetchConnections();
+                  }}
+                />
+              )}
             </div>
           </div>
 

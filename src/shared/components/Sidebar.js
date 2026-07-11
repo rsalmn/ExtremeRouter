@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import PropTypes from "prop-types";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
+import { useNewBadge } from "@/shared/hooks/useNewBadge";
 import DonateModal from "./DonateModal";
 
 const navGroups = [
@@ -43,6 +44,7 @@ const navGroups = [
     label: "Configure",
     items: [
       { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
+      { href: "/dashboard/alerts", label: "Alerts", icon: "notifications" },
       { href: "/dashboard/skills", label: "Skills", icon: "extension" },
       { href: "/dashboard/profile", label: "Settings", icon: "settings" },
     ],
@@ -53,6 +55,10 @@ export default function Sidebar({ onClose }) {
   // usePathname() returns the current route and updates on every client-side
   // navigation (App Router), so `active` below is always derived from the live URL.
   const pathname = usePathname();
+  const { isNew: isNewFeature, markSeen: markFeatureSeen } = useNewBadge("features");
+
+  // Mark current page as seen whenever the route changes (single hook, not per-item).
+  useEffect(() => { if (pathname) markFeatureSeen(pathname); }, [pathname, markFeatureSeen]);
   const [supportOpen, setSupportOpen] = useState(false);
 
   const isActive = (href) => {
@@ -97,6 +103,7 @@ export default function Sidebar({ onClose }) {
             <div className="space-y-1">
               {group.items.map((item) => {
                 const active = isActive(item.href);
+                const showNewBadge = !active && isNewFeature(item.href);
                 return (
                   <Link
                     key={item.href}
@@ -111,6 +118,9 @@ export default function Sidebar({ onClose }) {
                   >
                     <span className={cn("material-symbols-outlined text-[18px]", active && "text-primary fill-1")}>{item.icon}</span>
                     <span className="truncate font-medium">{item.label}</span>
+                    {showNewBadge && (
+                      <span className="ml-auto inline-flex items-center rounded-full bg-primary/12 px-1.5 py-0.5 text-[9px] font-bold text-primary ring-1 ring-primary/20">NEW</span>
+                    )}
                     {active && <span className="ml-auto size-1.5 rounded-full bg-primary" />}
                   </Link>
                 );

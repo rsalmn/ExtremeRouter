@@ -14,6 +14,7 @@ import {
 } from "@/shared/constants/providers";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
+import { useNewBadge } from "@/shared/hooks/useNewBadge";
 
 import ProviderCardV2 from "./components/ProviderCardV2";
 import ProviderSection from "./components/ProviderSection";
@@ -33,6 +34,7 @@ export default function ProvidersPage() {
   const [providerNodes, setProviderNodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAllApikey, setShowAllApikey] = useState(false);
+  const { isNew: isNewProvider, markSeen: markProviderSeen } = useNewBadge("providers");
 
   // Collapsible sections
   const [showCustom, setShowCustom] = useState(false);
@@ -273,6 +275,7 @@ export default function ProvidersPage() {
             providerId={info.id}
             provider={info}
             stats={getProviderStats(info.id, "apikey")}
+            isNew={isNewProvider(info.id)}
             onToggle={(active) => handleToggleProvider(info.id, "apikey", active)}
           />
         ))}
@@ -298,6 +301,7 @@ export default function ProvidersPage() {
             provider={info}
             stats={getProviderStats(key, "cookie")}
             isNoAuth={!!info.noAuth}
+            isNew={isNewProvider(key)}
             onToggle={(active) => handleToggleProvider(key, "cookie", active)}
           />
         ))}
@@ -325,6 +329,7 @@ export default function ProvidersPage() {
               provider={info}
               stats={getProviderStats(key, at)}
               comingSoon={!!info.comingSoon}
+              isNew={isNewProvider(key)}
               onToggle={(active) => handleToggleProvider(key, at, active)}
             />
           );
@@ -353,6 +358,7 @@ export default function ProvidersPage() {
               provider={info}
               stats={getProviderStats(key, freeAuthTypes)}
               isNoAuth={!!info.noAuth}
+              isNew={isNewProvider(key)}
               onToggle={(active) => handleToggleProvider(key, freeAuthTypes, active)}
             />
           );
@@ -363,6 +369,7 @@ export default function ProvidersPage() {
             providerId={key}
             provider={info}
             stats={getProviderStats(key, "apikey")}
+            isNew={isNewProvider(key)}
             onToggle={(active) => handleToggleProvider(key, "apikey", active)}
           />
         ))}
@@ -387,6 +394,7 @@ export default function ProvidersPage() {
             providerId={key}
             provider={info}
             stats={getProviderStats(key, "apikey")}
+            isNew={isNewProvider(key)}
             onToggle={(active) => handleToggleProvider(key, "apikey", active)}
           />
         ))}

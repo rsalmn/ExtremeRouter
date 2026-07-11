@@ -29,6 +29,7 @@ export default function ProviderCardV2({
   onToggle,
   isNoAuth = false,
   comingSoon = false,
+  isNew = false,
 }) {
   const isCompatible = providerId.startsWith(OPENAI_COMPATIBLE_PREFIX);
   const isAnthropicCompatible = providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX);
@@ -57,7 +58,12 @@ export default function ProviderCardV2({
           />
         </div>
         <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold text-text-main">{provider.name}</h3>
+          <h3 className="truncate text-sm font-semibold text-text-main">
+            {provider.name}
+            {isNew && (
+              <span className="ml-1.5 inline-flex items-center rounded-full bg-primary/12 px-1.5 py-0.5 text-[10px] font-bold text-primary ring-1 ring-primary/20">NEW</span>
+            )}
+          </h3>
           <div className="flex min-w-0 items-center gap-1.5 text-xs flex-wrap">
             {allDisabled ? (
               <Badge variant="default" size="sm">
