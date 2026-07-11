@@ -7,6 +7,7 @@ import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+import { parseSuffix } from "../translator/concerns/thinkingUnified.js";
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
@@ -51,7 +52,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const targetFormat = modelTargetFormat || runtimeTransport?.format || getTargetFormat(provider);
   if (runtimeTransport && credentials) credentials.runtimeTransport = runtimeTransport;
   const stripList = getModelStrip(alias, model);
-  const upstreamModel = getModelUpstreamId(alias, model);
+  // Strip thinking suffix (e.g. "model(high)") before upstream lookup so the
+  // parenthesized level doesn't leak into the model id sent to the provider.
+  // applyThinking() in the translator still receives the original `model`
+  // (with suffix) and parses it independently to apply the reasoning override.
+  const { cleanModel: cleanModelForUpstream } = parseSuffix(model);
+  const upstreamModel = getModelUpstreamId(alias, cleanModelForUpstream);
 
   // Inject provider-level thinking config override (only if client hasn't set)
   // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)

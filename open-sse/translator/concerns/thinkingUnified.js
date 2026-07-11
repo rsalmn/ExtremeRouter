@@ -218,7 +218,13 @@ function applyFormat(fmt, body, cfg, caps) {
     case "kimi": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       const level = toLevel(eff);
-      if (level) body.reasoning_effort = level === "max" ? "high" : level;
+      // Kimi accepts: low, medium, high only.
+      // minimal → low, xhigh/max → high, auto → omit (let backend default).
+      if (level && level !== "auto") {
+        body.reasoning_effort =
+          level === "minimal" ? "low" :
+          level === "xhigh" || level === "max" ? "high" : level;
+      }
       break;
     }
     case "minimax": {

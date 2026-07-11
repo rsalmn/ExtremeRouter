@@ -106,6 +106,38 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "kimi-k2.6", { reasoning_effort: "high" }, "kimi");
     expect(out.reasoning_effort).toBe("high");
   });
+  it("Kimi minimal → low (enum normalization)", () => {
+    const out = apply("openai", "kimi-k2.6", { reasoning_effort: "minimal" }, "kimi");
+    expect(out.reasoning_effort).toBe("low");
+  });
+  it("Kimi xhigh → high (enum normalization)", () => {
+    const out = apply("openai", "kimi-k2.6", { reasoning_effort: "xhigh" }, "kimi");
+    expect(out.reasoning_effort).toBe("high");
+  });
+  it("Kimi max → high (enum normalization)", () => {
+    const out = apply("openai", "kimi-k2.6", { reasoning_effort: "max" }, "kimi");
+    expect(out.reasoning_effort).toBe("high");
+  });
+  it("Kimi auto → omits reasoning_effort (let backend default)", () => {
+    const out = apply("openai", "kimi-k2.6", { reasoning_effort: "auto" }, "kimi");
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+  it("Kimi low → low (pass-through, no over-normalization)", () => {
+    const out = apply("openai", "kimi-k2.6", { reasoning_effort: "low" }, "kimi");
+    expect(out.reasoning_effort).toBe("low");
+  });
+  it("Kimi medium → medium (pass-through)", () => {
+    const out = apply("openai", "kimi-k2.6", { reasoning_effort: "medium" }, "kimi");
+    expect(out.reasoning_effort).toBe("medium");
+  });
+  it("Kimi suffix (minimal) → reasoning_effort low", () => {
+    const out = apply("openai", "kimi-k2.6(minimal)", {}, "kimi");
+    expect(out.reasoning_effort).toBe("low");
+  });
+  it("Kimi suffix (xhigh) → reasoning_effort high", () => {
+    const out = apply("openai", "kimi-k2.6(xhigh)", {}, "kimi");
+    expect(out.reasoning_effort).toBe("high");
+  });
   it("MiniMax M3 → adaptive", () => {
     const out = apply("claude", "MiniMax-M3", { reasoning_effort: "high" }, "minimax");
     expect(out.thinking).toEqual({ type: "adaptive" });
@@ -141,5 +173,70 @@ describe("extractReasoningText (response shapes)", () => {
   });
   it("no reasoning → empty", () => {
     expect(extractReasoningText({ content: "hello" })).toBe("");
+  });
+});
+
+// Regression: suffix (level) must never leak into the upstream body.model field.
+// This mirrors the chatCore.js integration chain:
+//   parseSuffix(model) → cleanModel → getModelUpstreamId(alias, cleanModel) → upstreamModel
+//   translatedBody.model = upstreamModel  (must NOT contain "(level)")
+//
+// If this test fails, a refactor removed the parseSuffix strip in chatCore.js
+// and providers will reject requests with "model not found" because the
+// parenthesized suffix is not a valid model id upstream.
+import { getModelUpstreamId } from "../../open-sse/config/providerModels.js";
+
+describe("suffix never leaks to upstream model field (chatCore integration)", () => {
+  // [alias, modelWithSuffix, expectedUpstreamModel]
+  const cases = [
+    ["ds", "deepseek-chat(high)", "deepseek-chat"],
+    ["ds", "deepseek-chat(none)", "deepseek-chat"],
+    ["ds", "deepseek-chat(auto)", "deepseek-chat"],
+    ["ds", "deepseek-chat(8192)", "deepseek-chat"],
+    ["ds", "deepseek-chat", "deepseek-chat"],
+    ["cx", "gpt-5.3-codex(max)", "gpt-5.3-codex"],
+    ["cx", "gpt-5.3-codex", "gpt-5.3-codex"],
+    ["deepseek", "deepseek-reasoner(low)", "deepseek-reasoner"],
+    ["deepseek", "deepseek-reasoner", "deepseek-reasoner"],
+  ];
+
+  for (const [alias, modelWithSuffix, expectedUpstream] of cases) {
+    it(`strips suffix: ${alias}/${modelWithSuffix} → ${expectedUpstream}`, () => {
+      // Step 1: parseSuffix (chatCore.js:59)
+      const { cleanModel, override } = parseSuffix(modelWithSuffix);
+      // Step 2: getModelUpstreamId with cleanModel (chatCore.js:60)
+      const upstreamModel = getModelUpstreamId(alias, cleanModel);
+
+      // The upstream model must be the clean name, never containing parentheses.
+      expect(upstreamModel).toBe(expectedUpstream);
+      expect(upstreamModel).not.toMatch(/[()]/);
+
+      // The override must still be parsed correctly (for applyThinking to use).
+      if (modelWithSuffix.includes("(")) {
+        expect(override).not.toBeNull();
+      }
+    });
+  }
+
+  it("override is applied to body via applyThinking even after cleanModel is used upstream", () => {
+    // Simulate: upstream body.model = "deepseek-reasoner" (clean),
+    // but applyThinking receives the original model with suffix.
+    const body = { messages: [{ role: "user", content: "hi" }] };
+    const modelWithSuffix = "deepseek-reasoner(high)";
+
+    // Step 1: strip suffix for upstream
+    const { cleanModel } = parseSuffix(modelWithSuffix);
+    const upstream = getModelUpstreamId("deepseek", cleanModel);
+    expect(upstream).toBe("deepseek-reasoner");
+    expect(upstream).not.toContain("(");
+
+    // Step 2: applyThinking still gets the suffix-bearing model and applies override
+    body.model = upstream;
+    applyThinking("deepseek", modelWithSuffix, body, "deepseek");
+
+    // Override should be reflected in the body, but model stays clean.
+    expect(body.reasoning_effort).toBe("high");
+    expect(body.thinking).toEqual({ type: "enabled" });
+    expect(body.model).toBe("deepseek-reasoner");
   });
 });
