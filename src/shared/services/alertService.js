@@ -71,8 +71,11 @@ export async function dispatchAlert(eventType, payload = {}) {
     if (!settings.webhookEnabled) return;
 
     const events = settings.webhookAlertEvents || {};
+    // Convert snake_case event type to camelCase key (e.g. "provider_down" → "providerDown")
+    // so it matches the webhookAlertEvents settings keys.
+    const camelKey = eventType.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
     // Check if this event type is enabled (skip for "test" alerts)
-    if (eventType !== "test" && !events[eventType]) return;
+    if (eventType !== "test" && !events[camelKey] && !events[eventType]) return;
 
     // Debounce: skip if same event+provider fired recently
     const debounceKey = `${eventType}:${payload.provider || "global"}`;
