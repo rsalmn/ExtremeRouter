@@ -18,6 +18,10 @@ export default {
     "apikey",
   ],
   hasOAuth: true,
+  thinkingConfig: {
+    options: ["auto", "none", "low", "medium", "high"],
+    defaultMode: "auto",
+  },
   transport: {
     baseUrl: "https://api.x.ai/v1/chat/completions",
     validateUrl: "https://api.x.ai/v1/models",
@@ -27,13 +31,21 @@ export default {
     refreshUrl: "https://auth.x.ai/oauth2/token",
   },
   models: [
+    // Reasoning LLMs (Responses API + Chat Completions)
+    { id: "grok-4.5", name: "Grok 4.5" },
+    { id: "grok-4.20-multi-agent", name: "Grok 4.20 Multi-Agent" },
+    { id: "grok-4.20-reasoning", name: "Grok 4.20 Reasoning" },
     { id: "grok-4", name: "Grok 4" },
     { id: "grok-4-fast-reasoning", name: "Grok 4 Fast Reasoning" },
     { id: "grok-code-fast-1", name: "Grok Code Fast" },
     { id: "grok-3", name: "Grok 3" },
+    // Image generation / editing
+    { id: "grok-imagine-image-quality", name: "Grok Imagine (Image Quality)", params: ["n","response_format"], kind: "image" },
     { id: "grok-2-image-1212", name: "Grok 2 Image", params: ["n","response_format"], kind: "image" },
+    // Image-to-Video
+    { id: "grok-imagine-video-1.5", name: "Grok Imagine Video 1.5", kind: "video" },
   ],
-  serviceKinds: ["llm","imageToText","webSearch","image"],
+  serviceKinds: ["llm","imageToText","webSearch","image","video"],
   imageConfig: { baseUrl: "https://api.x.ai/v1/images/generations", bodyFields: ["model","prompt","n","response_format"] },
   searchViaChat: {
     defaultModel: "grok-4.20-reasoning",

@@ -8,6 +8,7 @@ import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { getZenmuxModelsForPlan, getZenmuxPlanForCtoken } from "open-sse/services/zenmuxModels.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -382,6 +383,37 @@ const PROVIDER_MODELS_CONFIG = {
       }
       const data = await response.json();
       return { models: parseOpenAIStyleModels(data) };
+    }
+  },
+  "zenmux-free": {
+    customResolver: async (connection) => {
+      // Auto-detect plan from ctoken (extracted from cookie), then fall back
+      // to the manually-selected plan, then to "free".
+      const cookie = String(connection?.apiKey || "");
+      const ctokenMatch = cookie.match(/ctoken=([^;]+)/);
+      const ctoken = ctokenMatch?.[1] || "";
+
+      let planKey = connection?.providerSpecificData?.zenmuxPlan || "free";
+      if (ctoken) {
+        const detected = await getZenmuxPlanForCtoken(ctoken);
+        if (detected) planKey = detected;
+      }
+
+      try {
+        const models = await getZenmuxModelsForPlan(planKey);
+        if (models?.length) {
+          return { models };
+        }
+        return {
+          models: getStaticProviderModels("zenmux-free"),
+          warning: `ZenMux returned no models for plan "${planKey}"; falling back to static catalog.`,
+        };
+      } catch (error) {
+        return {
+          models: getStaticProviderModels("zenmux-free"),
+          warning: `Failed to fetch ZenMux models: ${error.message}`,
+        };
+      }
     }
   }
 };

@@ -12,6 +12,7 @@ import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
+import { getZenmuxModelsForPlan, getZenmuxPlanForCtoken } from "open-sse/services/zenmuxModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { capabilitiesFromServiceKind } from "open-sse/providers/capabilities.js";
 
@@ -71,6 +72,23 @@ const LIVE_MODEL_RESOLVERS = {
       apiKey: conn.apiKey,
     });
     return result?.models?.length ? { models: result.models } : null;
+  },
+  "zenmux-free": async (conn) => {
+    // Auto-detect the user's plan from their ctoken (extracted from the
+    // cookie stored in apiKey). Falls back to the manually-selected plan
+    // (providerSpecificData.zenmuxPlan), then to "free".
+    const cookie = String(conn?.apiKey || "");
+    const ctokenMatch = cookie.match(/ctoken=([^;]+)/);
+    const ctoken = ctokenMatch?.[1] || "";
+
+    let planKey = conn?.providerSpecificData?.zenmuxPlan || "free";
+    if (ctoken) {
+      const detected = await getZenmuxPlanForCtoken(ctoken);
+      if (detected) planKey = detected;
+    }
+
+    const models = await getZenmuxModelsForPlan(planKey);
+    return models?.length ? { models } : null;
   }
 };
 
