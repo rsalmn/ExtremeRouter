@@ -1,6 +1,6 @@
 {
   "name": "@rsalmn/extremerouter",
-  "version": "0.6.7",
+  "version": "0.6.8",
   "description": "ExtremeRouter CLI - AI Gateway control plane",
   "bin": {
     "extremerouter": "./cli.js"
