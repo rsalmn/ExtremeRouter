@@ -8,6 +8,7 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { parseSuffix } from "../translator/concerns/thinkingUnified.js";
+import { isCacheable, cacheLookup, cacheStore } from "../services/semanticCache.js";
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
@@ -35,7 +36,7 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, semanticCacheEnabled, semanticCacheThreshold }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -44,6 +45,18 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Check for bypass patterns (warmup, skip, cc naming)
   const bypassResponse = handleBypassRequest(body, model, userAgent, ccFilterNaming);
   if (bypassResponse) return bypassResponse;
+
+  // Semantic Cache — check for cached response before executing request.
+  // Only applies to non-streaming, tool-free, sufficiently-long requests.
+  if (semanticCacheEnabled && isCacheable(body, false, provider, model)) {
+    const threshold = typeof semanticCacheThreshold === "number" ? semanticCacheThreshold : 0.85;
+    const cached = cacheLookup(provider, model, body, threshold);
+    if (cached) {
+      log?.info?.("CACHE", `semantic cache ${cached.exact ? "HIT" : "near-hit"} (${(cached.similarity * 100).toFixed(0)}% similarity) — returning cached response`);
+      const cachedResponse = cached.response.clone ? cached.response.clone() : cached.response;
+      return { response: cachedResponse, url: "(cache)", headers: {}, transformedBody: body, fromCache: true, cacheSimilarity: cached.similarity };
+    }
+  }
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const modelTargetFormat = getModelTargetFormat(alias, model);
@@ -249,14 +262,24 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   // Execute request
-  let providerResponse, providerUrl, providerHeaders, finalBody;
+  let providerResponse, providerUrl, providerHeaders, finalBody, executorRetryCount = 0;
   try {
     const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
     finalBody = result.transformedBody;
+    executorRetryCount = result.retryCount || 0;
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
+
+    // Semantic Cache — store successful non-streaming response for future lookups.
+    if (semanticCacheEnabled && !stream && providerResponse?.ok && isCacheable(body, false, provider, model)) {
+      try {
+        // Clone the response so we can both return it and cache it.
+        const cloned = providerResponse.clone ? providerResponse.clone() : providerResponse;
+        cacheStore(provider, model, body, cloned);
+      } catch { /* fail-open: cache write failure should never break a request */ }
+    }
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
@@ -322,7 +345,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, savedTokens };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, savedTokens, retryCount: executorRetryCount };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

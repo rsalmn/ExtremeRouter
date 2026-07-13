@@ -100,6 +100,7 @@ export class BaseExecutor {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
+    let totalRetryCount = 0;
     const retryAttemptsByUrl = {};
 
     // Merge default retry config with provider-specific config
@@ -117,8 +118,17 @@ export class BaseExecutor {
         if (dynamic === false) return false; // hook vetoes retry (e.g. Retry-After too long)
         if (dynamic != null) waitMs = dynamic;
       }
+      // Exponential backoff with jitter: attempt N → delay * 2^(N-1) + random jitter.
+      // Caps at 30s to prevent excessive waits on flaky providers.
+      const attemptNum = retryAttemptsByUrl[urlIndex] + 1;
+      if (!response || !this.computeRetryDelay) {
+        const expDelay = delayMs * Math.pow(2, attemptNum - 1);
+        const jitter = Math.random() * (delayMs * 0.25); // 0–25% jitter
+        waitMs = Math.min(expDelay + jitter, 30_000);
+      }
       retryAttemptsByUrl[urlIndex]++;
-      log?.debug?.("RETRY", `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${waitMs / 1000}s`);
+      totalRetryCount++;
+      log?.debug?.("RETRY", `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${(waitMs / 1000).toFixed(1)}s (exp backoff attempt ${attemptNum})`);
       await new Promise(resolve => setTimeout(resolve, waitMs));
       return true;
     };
@@ -159,7 +169,7 @@ export class BaseExecutor {
           continue;
         }
 
-        return { response, url, headers, transformedBody };
+        return { response, url, headers, transformedBody, retryCount: totalRetryCount };
       } catch (error) {
         clearTimeout(connectTimer);
         lastError = error;

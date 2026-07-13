@@ -13,7 +13,6 @@ import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 import ModelRow from "./ModelRow";
-import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
 import ConnectionRow from "./ConnectionRow";
 import AddApiKeyModal from "./AddApiKeyModal";
@@ -22,6 +21,7 @@ import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 import VaultPoolBadge from "./VaultPoolBadge";
 import ZenmuxPlanSelector from "./ZenmuxPlanSelector";
+import HealthTimeline from "./HealthTimeline";
 import { useNewBadge } from "@/shared/hooks/useNewBadge";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
@@ -1625,6 +1625,13 @@ export default function ProviderDetailPage() {
           )}
         </Card>
       )}
+
+      {/* Health Timeline */}
+      <Card>
+        <div className="py-1">
+          <HealthTimeline providerId={providerId} />
+        </div>
+      </Card>
 
       {/* Models */}
       <Card>

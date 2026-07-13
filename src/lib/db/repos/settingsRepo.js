@@ -54,6 +54,9 @@ const DEFAULT_SETTINGS = {
   cavemanLevel: "full",
   ponytailEnabled: false,
   ponytailLevel: "full",
+  // Semantic Cache — Jaccard similarity-based response cache
+  semanticCacheEnabled: false,
+  semanticCacheThreshold: 0.85,
   // Webhook / Alert System
   webhookEnabled: false,
   webhookDiscordUrl: "",

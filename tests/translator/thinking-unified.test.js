@@ -138,6 +138,23 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "kimi-k2.6(xhigh)", {}, "kimi");
     expect(out.reasoning_effort).toBe("high");
   });
+  // ── Step normalization (minimal→low, xhigh/max→high, auto→omit) ──
+  it("Step minimal → low (enum normalization)", () => {
+    const out = apply("openai", "step-3-flash", { reasoning_effort: "minimal" }, "step");
+    expect(out.reasoning_effort).toBe("low");
+  });
+  it("Step xhigh → high (enum normalization)", () => {
+    const out = apply("openai", "step-3-flash", { reasoning_effort: "xhigh" }, "step");
+    expect(out.reasoning_effort).toBe("high");
+  });
+  it("Step auto → omits reasoning_effort", () => {
+    const out = apply("openai", "step-3-flash", { reasoning_effort: "auto" }, "step");
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+  it("Step high → high (pass-through)", () => {
+    const out = apply("openai", "step-3-flash", { reasoning_effort: "high" }, "step");
+    expect(out.reasoning_effort).toBe("high");
+  });
   it("MiniMax M3 → adaptive", () => {
     const out = apply("claude", "MiniMax-M3", { reasoning_effort: "high" }, "minimax");
     expect(out.thinking).toEqual({ type: "adaptive" });

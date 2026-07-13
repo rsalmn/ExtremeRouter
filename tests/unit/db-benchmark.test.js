@@ -32,7 +32,6 @@ beforeAll(async () => {
   sqliteDb = await import("@/lib/db/index.js");
   await sqliteDb.initDb();
 
-  // Lowdb setup — direct lowdb usage (mimics legacy behavior)
   tempLowdb = fs.mkdtempSync(path.join(os.tmpdir(), "extremerouter-bench-lowdb-"));
   const { Low } = await import("lowdb");
   const { JSONFile } = await import("lowdb/node");

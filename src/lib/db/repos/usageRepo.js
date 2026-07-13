@@ -977,3 +977,111 @@ export async function getRecentLogs(limit = 200) {
     return [];
   }
 }
+
+/**
+ * Get health timeline data for a specific provider — hourly buckets of
+ * success/error counts + avg latency over the last N hours.
+ *
+ * @param {string} providerId - provider id
+ * @param {number} hours - lookback window (default 24)
+ * @returns {Promise<Array<{ts:string, ok:number, err:number, latency:number}>>}
+ */
+export async function getProviderHealthTimeline(providerId, hours = 24) {
+  const db = await getAdapter();
+  const now = Date.now();
+  const startMs = now - hours * 60 * 60 * 1000;
+  const startTs = new Date(startMs).toISOString();
+
+  try {
+    const rows = db.all(
+      `SELECT timestamp, status, latencyTotalMs FROM usageHistory
+       WHERE provider = ? AND timestamp >= ?
+       ORDER BY timestamp ASC`,
+      [providerId, startTs],
+    );
+
+    // Bucket into hourly slots
+    const buckets = new Map();
+    for (const r of rows) {
+      const ts = new Date(r.timestamp).getTime();
+      const bucketHour = Math.floor(ts / (60 * 60 * 1000)) * (60 * 60 * 1000);
+      if (!buckets.has(bucketHour)) {
+        buckets.set(bucketHour, { ts: new Date(bucketHour).toISOString(), ok: 0, err: 0, latSum: 0, latCount: 0 });
+      }
+      const b = buckets.get(bucketHour);
+      const statusNum = Number(r.status);
+      if (statusNum >= 200 && statusNum < 400) {
+        b.ok++;
+      } else {
+        b.err++;
+      }
+      if (r.latencyTotalMs > 0) {
+        b.latSum += r.latencyTotalMs;
+        b.latCount++;
+      }
+    }
+
+    // Fill gaps + compute avg latency
+    const result = [];
+    const totalBuckets = Math.ceil(hours);
+    for (let i = 0; i < totalBuckets; i++) {
+      const bucketHour = Math.floor((startMs + i * 60 * 60 * 1000) / (60 * 60 * 1000)) * (60 * 60 * 1000);
+      const b = buckets.get(bucketHour);
+      if (b) {
+        result.push({ ts: b.ts, ok: b.ok, err: b.err, latency: b.latCount > 0 ? Math.round(b.latSum / b.latCount) : 0 });
+      } else {
+        result.push({ ts: new Date(bucketHour).toISOString(), ok: 0, err: 0, latency: 0 });
+      }
+    }
+    return result;
+  } catch (e) {
+    console.error("[usageRepo] getProviderHealthTimeline failed:", e.message);
+    return [];
+  }
+}
+
+/**
+ * Get retry statistics — how many requests needed retries, and how many
+ * retries were needed. Data comes from usageHistory.meta (JSON with retryCount).
+ *
+ * @param {string} period - "24h" | "7d" | "30d"
+ * @returns {Promise<{totalRequests:number, retriedRequests:number, totalRetries:number, byProvider:Array}>}
+ */
+export async function getRetryStats(period = "7d") {
+  const db = await getAdapter();
+  const { startTs } = periodRange(period);
+  try {
+    const rows = db.all(
+      `SELECT provider, meta FROM usageHistory WHERE timestamp >= ? AND meta IS NOT NULL`,
+      [startTs],
+    );
+    let totalRequests = 0;
+    let retriedRequests = 0;
+    let totalRetries = 0;
+    const byProvider = {};
+    for (const r of rows) {
+      totalRequests++;
+      try {
+        const meta = JSON.parse(r.meta);
+        if (meta.retryCount && meta.retryCount > 0) {
+          retriedRequests++;
+          totalRetries += meta.retryCount;
+          const p = r.provider || "unknown";
+          if (!byProvider[p]) byProvider[p] = { provider: p, requests: 0, retries: 0 };
+          byProvider[p].requests++;
+          byProvider[p].retries += meta.retryCount;
+        }
+      } catch { /* skip invalid meta */ }
+    }
+    return {
+      totalRequests,
+      retriedRequests,
+      totalRetries,
+      retryRate: totalRequests > 0 ? Math.round((retriedRequests / totalRequests) * 100) : 0,
+      byProvider: Object.values(byProvider).sort((a, b) => b.retries - a.retries).slice(0, 10),
+    };
+  } catch (e) {
+    console.error("[usageRepo] getRetryStats failed:", e.message);
+    return { totalRequests: 0, retriedRequests: 0, totalRetries: 0, retryRate: 0, byProvider: [] };
+  }
+}

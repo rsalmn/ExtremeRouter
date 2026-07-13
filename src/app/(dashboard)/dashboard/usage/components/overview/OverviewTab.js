@@ -12,6 +12,7 @@ import OverviewErrorDonut from "./OverviewErrorDonut";
 import OverviewProviderChart from "./OverviewProviderChart";
 import OverviewLatencyChart from "./OverviewLatencyChart";
 import OverviewBreakdownTable from "./OverviewBreakdownTable";
+import RetryChart from "../RetryChart";
 import { useFetchJson } from "./useFetch";
 
 // Stacked area for the tokens/cost view of the main chart is owned here so the
@@ -314,6 +315,9 @@ export default function OverviewTab({ period }) {
 
       {/* Latency chart (full width) */}
       <OverviewLatencyChart period={period} stats={stats} />
+
+      {/* Retry chart (full width) */}
+      <RetryChart period={period} />
 
       {/* Breakdown table */}
       <OverviewBreakdownTable stats={stats} period={period} />

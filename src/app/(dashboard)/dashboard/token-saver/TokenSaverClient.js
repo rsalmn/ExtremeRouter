@@ -28,6 +28,9 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [semanticCacheEnabled, setSemanticCacheEnabled] = useState(false);
+  const [semanticCacheThreshold, setSemanticCacheThreshold] = useState(0.85);
+  const [cacheStats, setCacheStats] = useState(null);
   const [locale, setLocale] = useState("en");
 
   const { copied, copy } = useCopyToClipboard();
@@ -152,6 +155,20 @@ export default function TokenSaverClient() {
     patchSetting({ ponytailLevel: level });
   };
 
+  const handleSemanticCacheToggle = (value) => {
+    setSemanticCacheEnabled(value);
+    patchSetting({ semanticCacheEnabled: value });
+  };
+
+  const handleCacheThreshold = (value) => {
+    setSemanticCacheThreshold(value);
+    patchSetting({ semanticCacheThreshold: value });
+  };
+
+  const handleClearCache = async () => {
+    try { await fetch("/api/cache", { method: "DELETE" }); setCacheStats(null); } catch {}
+  };
+
   useEffect(() => {
     const loadSettings = async () => {
       try {
@@ -165,6 +182,8 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
+          setSemanticCacheEnabled(!!data.semanticCacheEnabled);
+          setSemanticCacheThreshold(typeof data.semanticCacheThreshold === "number" ? data.semanticCacheThreshold : 0.85);
           refreshHeadroomStatus();
         }
       } catch {}
@@ -363,6 +382,81 @@ export default function TokenSaverClient() {
             />
           </div>
         </div>
+      </Card>
+
+      {/* Semantic Cache */}
+      <Card>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-text-muted">cached</span>
+            <div>
+              <p className="text-sm font-medium text-text-main">
+                Semantic Cache
+              </p>
+              <p className="text-xs text-text-muted mt-0.5">
+                Cache responses by message similarity (Jaccard). Instant hits, $0 cost.
+              </p>
+            </div>
+          </div>
+          <Toggle
+            checked={semanticCacheEnabled}
+            onChange={() => handleSemanticCacheToggle(!semanticCacheEnabled)}
+          />
+        </div>
+        {semanticCacheEnabled && (
+          <div className="mt-4 flex flex-col gap-3 border-t border-border-subtle pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-text-muted">Similarity Threshold</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min={0.5}
+                  max={1.0}
+                  step={0.05}
+                  value={semanticCacheThreshold}
+                  onChange={(e) => handleCacheThreshold(parseFloat(e.target.value))}
+                  className="w-32 accent-[var(--color-primary)]"
+                />
+                <span className="w-10 text-right font-mono text-xs text-text-main">
+                  {Math.round(semanticCacheThreshold * 100)}%
+                </span>
+              </div>
+            </div>
+            {cacheStats && (
+              <div className="flex flex-wrap gap-3 text-xs text-text-muted">
+                <span>Size: {cacheStats.size}</span>
+                <span>·</span>
+                <span>Hits: {cacheStats.hits}</span>
+                <span>·</span>
+                <span>Near: {cacheStats.nearHits}</span>
+                <span>·</span>
+                <span>Misses: {cacheStats.misses}</span>
+                <span>·</span>
+                <span>Rate: {cacheStats.hitRate}%</span>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="refresh"
+                onClick={async () => {
+                  try { const res = await fetch("/api/cache"); setCacheStats(await res.json()); } catch {}
+                }}
+              >
+                Refresh Stats
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="delete"
+                onClick={handleClearCache}
+              >
+                Clear Cache
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       <Modal

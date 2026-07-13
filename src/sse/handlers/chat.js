@@ -337,6 +337,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       cavemanLevel: chatSettings.cavemanLevel || "full",
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
+      semanticCacheEnabled: !!chatSettings.semanticCacheEnabled,
+      semanticCacheThreshold: typeof chatSettings.semanticCacheThreshold === "number" ? chatSettings.semanticCacheThreshold : 0.85,
       providerThinking,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,

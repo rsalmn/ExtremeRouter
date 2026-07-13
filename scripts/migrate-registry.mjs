@@ -1,39 +1,23 @@
-/**
- * migrate-registry.mjs
- * Migrates all registry files to Model-A schema:
- *   - models[] = ALL models (chat + media), field `kind` (default "llm")
- *   - media wrapper removed → fields promoted top-level
- *   - *Config.models removed (data merged into models[])
- *   - format: terse, consistent indent
- *
- * Run: node --experimental-vm-modules migrate-registry.mjs [--dry]
- */
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REGISTRY_DIR = __dirname; // script lives in registry/
+const REGISTRY_DIR = __dirname;
 const DRY = process.argv.includes("--dry");
 
-// *Config.models field → kind value
 const CFG_KIND = {
-  ttsConfig:          "tts",
-  sttConfig:          "stt",
-  embeddingConfig:    "embedding",
-  imageConfig:        "image",
-  imageToTextConfig:  "imageToText",
-  videoConfig:        "video",
-  musicConfig:        "music",
+  ttsConfig: "tts",
+  sttConfig: "stt",
+  embeddingConfig: "embedding",
+  imageConfig: "image",
+  imageToTextConfig: "imageToText",
+  videoConfig: "video",
+  musicConfig: "music",
 };
 
-// Fields in *Config that are NOT models (keep on config)
 const MODEL_ONLY_KEY = "models";
-
-// Top-level registry fields that are NOT media-config (don't flatten these from media)
-// serviceKinds + *Config + searchViaChat + mediaConfig + passthroughModels are media fields
-// Everything else is already top-level
 const MEDIA_WHITELIST = new Set([
   "serviceKinds",
   "ttsConfig", "sttConfig", "embeddingConfig",
@@ -46,7 +30,6 @@ const MEDIA_WHITELIST = new Set([
 function migrateEntry(entry, filename) {
   const out = {};
 
-  // 1. Top-level identity/transport fields (preserve order)
   const TRANSPORT_KEYS = ["id", "alias", "aliases", "uiAlias", "display", "category",
     "authType", "authHint", "authModes", "hasOAuth", "noAuth",
     "hasProviderSpecificData", "thinkingConfig", "hiddenKinds",
@@ -55,7 +38,6 @@ function migrateEntry(entry, filename) {
     if (entry[k] !== undefined) out[k] = entry[k];
   }
 
-  // 2. Collect existing models[] (convert type→kind, skip if kind already set)
   const existingModels = (entry.models || []).map(m => {
     const { type, ...rest } = m;
     const kind = m.kind ?? (type && type !== "llm" ? type : undefined);
@@ -153,10 +135,10 @@ function formatInlineObject(obj) {
 
 // Config objects (ttsConfig etc) — inline single line if short, else multi-line
 function formatConfig(cfg) {
-  const line = `{ ${Object.entries(cfg).map(([k,v])=>`${k}: ${JSON.stringify(v)}`).join(", ")} }`;
+  const line = `{ ${Object.entries(cfg).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ")} }`;
   if (line.length <= 120) return line;
   const pad1 = "  ".repeat(2);
-  const lines = Object.entries(cfg).map(([k,v]) => `${pad1}${k}: ${JSON.stringify(v)}`);
+  const lines = Object.entries(cfg).map(([k, v]) => `${pad1}${k}: ${JSON.stringify(v)}`);
   return `{\n${lines.join(",\n")},\n  }`;
 }
 
