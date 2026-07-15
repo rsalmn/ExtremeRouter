@@ -291,7 +291,8 @@ function buildMetaAiRequestBody(prompt, model, conversation) {
     doc_id: META_AI_SEND_MESSAGE_DOC_ID,
     variables: {
       assistantMessageId: crypto.randomUUID(),
-      attachments: null,
+      // `attachments` was removed from Meta's GraphQL schema; sending it (even null) makes
+      // the server reject the persisted query with "Unknown type AttachmentInput". Omit it.
       clientLatitude: null,
       clientLongitude: null,
       clientTimezone:

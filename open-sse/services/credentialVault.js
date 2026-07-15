@@ -248,11 +248,16 @@ export function getActiveVaultProviders() {
   for (const providerId of Object.keys(VAULT_SEED)) {
     const stats = getPoolStats(providerId);
     if (!stats || stats.available === 0) continue;
-    // Confirm at least the first key actually decrypts (catches tampered /
-    // wrong-fragment cases that pool stats alone wouldn't detect).
+    // H4 FIX: Iterate ALL blobs until one decrypts. Only checking seed[0] was
+    // non-representative — if the first key is corrupt but others are fine, the
+    // provider was incorrectly hidden from model listings.
     const seed = VAULT_SEED[providerId];
-    const firstBlob = Array.isArray(seed) ? seed[0]?.blob : seed;
-    if (vaultDecrypt(firstBlob)) out.push(providerId);
+    if (Array.isArray(seed)) {
+      const anyDecryptable = seed.some((entry) => entry?.blob && vaultDecrypt(entry.blob));
+      if (anyDecryptable) out.push(providerId);
+    } else if (typeof seed === "string") {
+      if (vaultDecrypt(seed)) out.push(providerId);
+    }
   }
   return out;
 }

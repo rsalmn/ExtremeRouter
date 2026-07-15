@@ -362,7 +362,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+    // H3 FIX: Pass the vault keyName from credentials so markVaultKeyRateLimited
+    // targets the exact key that errored, not LAST_ISSUED (which races under concurrency).
+    const vaultKey = credentials.connectionId === "vault" ? credentials.connectionName?.replace("Vault · ", "") : null;
+    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs, vaultKey);
 
     // Record health + circuit breaker for retryable failures only.
     const latencyMs = Date.now() - attemptStart;

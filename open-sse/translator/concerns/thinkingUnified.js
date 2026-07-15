@@ -119,8 +119,16 @@ function toBudget(cfg, range) {
   return budget;
 }
 
+// M8 FIX: Valid effort levels — any client-sent value outside this set is
+// rejected (returns null) so it can't leak to upstream as an invalid enum.
+const VALID_LEVELS = new Set(["minimal", "low", "medium", "high", "xhigh", "max"]);
+
 // Convert unified config to a discrete level string.
 function toLevel(cfg) {
+  if (cfg.mode === "level") {
+    // Validate against known levels — reject unknown client-injected values.
+    return VALID_LEVELS.has(cfg.level) ? cfg.level : null;
+  }
   if (cfg.mode === "level") return cfg.level;
   if (cfg.mode === "budget") return budgetToLevel(cfg.budget) || "medium";
   if (cfg.mode === "auto") return "auto";

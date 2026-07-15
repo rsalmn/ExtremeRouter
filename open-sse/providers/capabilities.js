@@ -154,7 +154,10 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*claude*fable*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude*mythos*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude-3*",      caps: { vision: true } },
-  { pattern: "*claude*",        caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
+  // M5 FIX: Tightened from bare *claude* to require a dash separator, avoiding
+  // false-positives on custom models that happen to contain "claude" (e.g.
+  // "my-claude-finetune"). Real Claude model IDs always contain "claude-".
+  { pattern: "*claude-*",       caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
 
   // ── Gemini (all 2.0+ multimodal + google_search grounding, 1M ctx) ─
   { pattern: "*gemini*image*",  caps: { vision: true, imageOutput: true, contextWindow: 1048576 } },
@@ -178,10 +181,16 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*gpt-oss*",       caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },
 
   // ── OpenAI o-series (reasoning, vision) ──────────────────────────
+  // M4 FIX: Tightened from *o1* (matches any model containing "o1") to *o1-* /
+  // *o1_* to avoid false-positives on unrelated models. The prefix "o" + digit +
+  // separator is OpenAI's naming convention; generic "o1" substrings are too broad.
   { pattern: "*o1-mini*",       caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },
-  { pattern: "*o1*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
-  { pattern: "*o3*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
-  { pattern: "*o4*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
+  { pattern: "*o1-*",           caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
+  { pattern: "*o1_*",           caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
+  { pattern: "*o3-*",           caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
+  { pattern: "*o3_*",           caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
+  { pattern: "*o4-*",           caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
+  { pattern: "*o4_*",           caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
 
   // ── Grok (vision + Live Search) ──────────────────────────────────
   { pattern: "*grok-imagine-video*", caps: { videoOutput: true } },
