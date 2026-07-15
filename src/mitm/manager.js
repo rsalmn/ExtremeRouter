@@ -496,9 +496,31 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     fs.writeFileSync(LOCK_FILE, String(process.pid), { flag: "wx" });
   } catch (e) {
     if (e.code === "EEXIST") {
-      throw new Error("MITM server is already starting (lock contention)");
+      // Stale-lock recovery: read the PID from the lock file and check if that
+      // process is still alive. If the holder is dead, the lock is an orphan
+      // from a crashed previous start — delete it and retry once.
+      try {
+        const lockPid = parseInt(fs.readFileSync(LOCK_FILE, "utf-8").trim(), 10);
+        if (lockPid && !isProcessAlive(lockPid)) {
+          // Holder is dead — safe to reclaim.
+          fs.unlinkSync(LOCK_FILE);
+          fs.writeFileSync(LOCK_FILE, String(process.pid), { flag: "wx" });
+        } else {
+          // Holder is still alive — genuine contention.
+          throw new Error("MITM server is already starting (lock contention)");
+        }
+      } catch (e2) {
+        // Could not read/parse lock file (corrupt?) — reclaim it.
+        try { fs.unlinkSync(LOCK_FILE); } catch {}
+        try {
+          fs.writeFileSync(LOCK_FILE, String(process.pid), { flag: "wx" });
+        } catch {
+          throw new Error("MITM server is already starting (lock contention)");
+        }
+      }
+    } else {
+      throw e;
     }
-    throw e;
   }
 
   try {

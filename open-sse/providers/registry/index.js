@@ -124,6 +124,8 @@ import p121 from "./xiaomi-tokenplan.js";
 import p122 from "./youcom.js";
 import p123 from "./zenmux-free.js";
 import p124 from "./api-airforce.js";
+import p125 from "./openvecta.js";
+import p126 from "./freebuff-web.js";
 
 export default [
   p0,
@@ -250,5 +252,7 @@ export default [
   p121,
   p122,
   p123,
-  p124
+  p124,
+  p125,
+  p126
 ];

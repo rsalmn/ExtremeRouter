@@ -1055,6 +1055,104 @@ export async function POST(request) {
           break;
         }
 
+        case "devin": {
+          try {
+            const res = await fetch("https://api.devin.ai/v1/sessions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+              body: JSON.stringify({ prompt: "ping", idempotency_id: "validation-" + Date.now() }),
+            });
+            isValid = res.status !== 401 && res.status !== 403;
+            if (!isValid) error = "Invalid Devin API key";
+          } catch (err) {
+            isValid = false;
+            error = err.message || "Failed to validate Devin key";
+          }
+          break;
+        }
+        case "openvecta": {
+          try {
+            const res = await fetch("https://openvecta.com/v1/models", {
+              headers: { Authorization: `Bearer ${apiKey}` },
+            });
+            isValid = res.ok;
+            if (!isValid) error = "Invalid OpenVecta API key";
+          } catch (err) {
+            isValid = false;
+            error = err.message || "Failed to validate OpenVecta key";
+          }
+          break;
+        }
+        case "api-airforce": {
+          // Session-cookie → api_key exchange. The user pastes the airforce_session
+          // JWT. Validate by calling /api/me which returns account JSON if valid.
+          let sessionJwt = apiKey.replace(/^Cookie:\s*/i, "").trim();
+          const afMatch = sessionJwt.match(/airforce_session=([^;]+)/);
+          if (afMatch) sessionJwt = afMatch[1];
+          if (!sessionJwt.startsWith("eyJ")) {
+            isValid = false;
+            error = "Not a valid airforce_session JWT — copy the cookie value from api.airforce DevTools (starts with eyJ)";
+          } else {
+            try {
+              const res = await fetch("https://api.airforce/api/me", {
+                method: "GET",
+                headers: {
+                  Cookie: `airforce_session=${sessionJwt}`,
+                  Accept: "application/json",
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+                  Referer: "https://api.airforce/playground/",
+                },
+              });
+              if (res.status === 401 || res.status === 403) {
+                isValid = false;
+                error = "Invalid or expired airforce_session cookie";
+              } else if (!res.ok) {
+                isValid = false;
+                error = `api.airforce returned ${res.status}`;
+              } else {
+                const data = await res.json().catch(() => null);
+                isValid = !!(data && data.api_key && String(data.api_key).startsWith("sk-air-"));
+                if (!isValid) error = "Session accepted but no api_key returned";
+              }
+            } catch (err) {
+              isValid = false;
+              error = err.message || "Failed to validate airforce session";
+            }
+          }
+          break;
+        }
+
+        case "freebuff-web": {
+          let cookie = apiKey.replace(/^Cookie:\s*/i, "").trim();
+          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cookie)) {
+            cookie = `__Secure-next-auth.session-token=${cookie}`;
+          }
+          try {
+            const res = await fetch("https://freebuff.com/api/auth/session", {
+              method: "GET",
+              headers: {
+                Cookie: cookie,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+              },
+            });
+            if (res.status === 401 || res.status === 403) {
+              isValid = false;
+              error = "Invalid or expired freebuff.com session cookie";
+            } else if (!res.ok) {
+              isValid = false;
+              error = `FreeBuff returned ${res.status}`;
+            } else {
+              const data = await res.json().catch(() => null);
+              isValid = !!(data && data.user);
+              if (!isValid) error = "Session accepted but no user — cookie may be expired";
+            }
+          } catch (err) {
+            isValid = false;
+            error = err.message || "Failed to validate FreeBuff session";
+          }
+          break;
+        }
+
         case "zenmux-free": {
           const cookie = apiKey.replace(/^Cookie:\s*/i, "");
           const ctoken = (cookie.match(/ctoken=([^;]+)/) || [])[1];

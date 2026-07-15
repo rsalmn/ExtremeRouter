@@ -22,6 +22,8 @@ import BulkImportCodexModal from "./BulkImportCodexModal";
 import VaultPoolBadge from "./VaultPoolBadge";
 import ZenmuxPlanSelector from "./ZenmuxPlanSelector";
 import HealthTimeline from "./HealthTimeline";
+import FreeBuffProfile from "./FreeBuffProfile";
+import V0Profile from "./V0Profile";
 import { useNewBadge } from "@/shared/hooks/useNewBadge";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
@@ -1386,6 +1388,12 @@ export default function ProviderDetailPage() {
             <div className="flex flex-col gap-2">
               <h2 className="text-lg font-semibold">Connections</h2>
               <VaultPoolBadge providerId={providerId} />
+              {providerId === "freebuff-web" && connections.length > 0 && (
+                <FreeBuffProfile connectionId={connections[0].id} />
+              )}
+              {providerId === "v0-vercel-web" && connections.length > 0 && (
+                <V0Profile connectionId={connections[0].id} />
+              )}
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
               {connections.length > 0 && proxyPools.length > 0 && (
@@ -1433,9 +1441,9 @@ export default function ProviderDetailPage() {
                 </>
               )}
               {/* Thinking config */}
-              {/* {thinkingConfig && (
+              {thinkingConfig && (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-text-muted font-medium">Thinking</span>
+                  <span className="text-xs text-text-muted font-medium">Thought Level</span>
                   <select
                     value={thinkingMode}
                     onChange={(e) => handleThinkingModeChange(e.target.value)}
@@ -1446,7 +1454,7 @@ export default function ProviderDetailPage() {
                     ))}
                   </select>
                 </div>
-              )} */}
+              )}
               {/* Round Robin toggle */}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-text-muted font-medium">Round Robin</span>

@@ -239,28 +239,25 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * @param {string|null} model - The specific model that triggered the error
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
-export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
+export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null, credentialKey = null) {
   if (!connectionId || connectionId === "noauth") {
-    // noauth is a virtual shared connection — locking it would penalize ALL users
-    // for one user's rate-limit. Let the per-request retry/circuit-breaker handle
-    // transient failures instead.
     return { shouldFallback: false, cooldownMs: 0 };
   }
   if (connectionId === "vault") {
-    // Vault pool key got rate-limited. Mark THIS specific key (not the whole pool)
-    // so the next request rotates to a fresh key. shouldFallback=true lets the
-    // caller retry immediately with a different key from the pool.
-    // credentialVault tracks the last-issued key per provider, so we don't need
-    // to thread the keyName through every handler signature.
+    // H3 FIX: Use the explicit credentialKey passed from the caller (the actual
+    // keyName that was issued for this request) instead of relying on LAST_ISSUED
+    // which can be stale under concurrency. Falls back to LAST_ISSUED for backward
+    // compat if no key is passed.
     try {
       const { markVaultKeyRateLimited } = await import("open-sse/services/credentialVault.js");
       if (provider) {
-        // Use resetsAtMs if the upstream gave us a precise Retry-After, else default.
+        // M7 FIX: Use MAX_RATE_LIMIT_COOLDOWN_MS (30min) instead of hardcoded
+        // 5min cap, consistent with regular connection cooldown behavior.
         const cooldown = resetsAtMs && resetsAtMs > Date.now()
-          ? Math.min(resetsAtMs - Date.now(), 300_000)
+          ? Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS)
           : 60_000;
-        markVaultKeyRateLimited(provider, null, cooldown);
-        log.info("AUTH", `${provider} | vault key rate-limited [${status}], rotating to next pool key in ${Math.round(cooldown / 1000)}s`);
+        markVaultKeyRateLimited(provider, credentialKey, cooldown);
+        log.info("AUTH", `${provider} | vault key rate-limited [${status}] key=${credentialKey || "(last-issued)"}, rotating in ${Math.round(cooldown / 1000)}s`);
       }
     } catch { /* vault unavailable — no-op */ }
     return { shouldFallback: true, cooldownMs: 0 };

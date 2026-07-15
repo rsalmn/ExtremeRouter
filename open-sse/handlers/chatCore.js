@@ -21,6 +21,11 @@ import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
+
+// H1 FIX: Per-connection debounce Set for cookie auto-refresh. Prevents concurrent
+// requests from racing on the same connection's cookie update — only one refresh
+// in-flight per connection at a time.
+const cookieRefreshInProgress = new Set();
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
@@ -146,7 +151,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
     if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, upstreamModel);
   } else {
-    translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
+    // C2 FIX: Pass the original `model` (WITH thinking suffix like "(high)") to
+    // translateRequest so applyThinking's parseSuffix can extract the override.
+    // The body.model is overwritten with the stripped upstreamModel on line 156
+    // AFTER translation, so the suffix never leaks to the upstream provider.
+    translatedBody = translateRequest(sourceFormat, targetFormat, model, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
     if (!translatedBody) {
       trackPendingRequest(model, provider, connectionId, false, true);
       return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
@@ -270,6 +279,29 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     providerHeaders = result.headers;
     finalBody = result.transformedBody;
     executorRetryCount = result.retryCount || 0;
+
+    // Auto-refresh cookies: some cookie providers (e.g. freebuff-web via NextAuth.js)
+    // rotate the session token via Set-Cookie on every request. Capture the new
+    // token and persist it back to the connection so the user doesn't need to
+    // re-submit cookies.
+    //
+    // H1 FIX: Per-connection debounce via a module-level Map to prevent concurrent
+    // requests from racing on the same connection's cookie. If a refresh is already
+    // in-flight for this connection, skip — the in-flight one will persist the
+    // latest cookie, and the next request will pick it up from the DB.
+    if (result.refreshedCookie && credentials?.connectionId) {
+      const connId = credentials.connectionId;
+      if (!cookieRefreshInProgress.has(connId)) {
+        cookieRefreshInProgress.add(connId);
+        try {
+          const { updateProviderConnection } = await import("@/lib/localDb");
+          await updateProviderConnection(connId, { apiKey: result.refreshedCookie });
+          log?.debug?.("COOKIE-REFRESH", `${provider} | auto-refreshed session cookie for ${connId.slice(0, 8)}`);
+        } catch { /* non-fatal — next request will try again */ }
+        finally { cookieRefreshInProgress.delete(connId); }
+      }
+    }
+
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
 
     // Semantic Cache — store successful non-streaming response for future lookups.

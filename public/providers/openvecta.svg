@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0D0D1A"/>
+  <!-- V-shaped vector arrow representing "vecta" (direction/vector) -->
+  <path d="M14 18 L32 46 L50 18" fill="none" stroke="#7C3AED" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M20 18 L32 36 L44 18" fill="none" stroke="#A78BFA" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
+  <circle cx="32" cy="46" r="4" fill="#7C3AED"/>
+</svg>

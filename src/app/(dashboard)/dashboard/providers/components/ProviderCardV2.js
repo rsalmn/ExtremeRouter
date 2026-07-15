@@ -14,7 +14,7 @@ const SVG_ICON_IDS = new Set([
   "chatgpt-web", "doubao-web", "gemini-web", "copilot-web", "muse-spark-web",
   "duckduckgo-web", "venice-web", "t3-web", "lmarena", "veoaifree-web",
   "claude-web", "pollinations", "poe-web", "v0-vercel-web", "qwen-web",
-  "kimi-web", "huggingchat", "api-airforce",
+  "kimi-web", "huggingchat", "api-airforce", "openvecta", "freebuff-web", "zenmux-free",
 ]);
 
 /**

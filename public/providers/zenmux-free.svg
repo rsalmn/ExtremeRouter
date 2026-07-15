@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0D0D1A"/>
+  <!-- Z-shaped multiplexer symbol representing ZenMux -->
+  <path d="M18 18 L46 18 L18 46 L46 46" fill="none" stroke="#6366F1" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="18" cy="18" r="3" fill="#6366F1"/>
+  <circle cx="46" cy="46" r="3" fill="#6366F1"/>
+  <circle cx="46" cy="18" r="3" fill="#818CF8" opacity="0.5"/>
+  <circle cx="18" cy="46" r="3" fill="#818CF8" opacity="0.5"/>
+</svg>

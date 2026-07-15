@@ -1035,6 +1035,47 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid or expired Puter auth token" };
       }
+      case "mimo-free": {
+        // No-auth free provider — just validate reachability.
+        const res = await fetchWithConnectionProxy("https://api.xiaomimimo.com/api/free-ai/openai/models", {
+          method: "GET",
+          headers: { "User-Agent": "Mozilla/5.0" },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "MiMo Free API is unreachable" };
+      }
+      case "devin": {
+        // API key provider — validate via session creation (lightweight).
+        try {
+          const res = await fetchWithConnectionProxy("https://api.devin.ai/v1/sessions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${connection.apiKey}`,
+            },
+            body: JSON.stringify({ prompt: "ping", idempotency_id: "validation-" + Date.now() }),
+          }, effectiveProxy);
+          // 401/403 = bad key, 200/201 = valid, other = unknown
+          const valid = res.status !== 401 && res.status !== 403;
+          return { valid, error: valid ? null : "Invalid Devin API key" };
+        } catch (err) {
+          return { valid: false, error: err.message };
+        }
+      }
+      case "vertex":
+      case "vertex-partner": {
+        // Google Vertex AI — validate via OAuth token check.
+        if (!connection.accessToken) return { valid: false, error: "No access token" };
+        const res = await fetchWithConnectionProxy("https://oauth2.googleapis.com/tokeninfo", {
+          method: "GET",
+          headers: {},
+        });
+        // Vertex uses Google OAuth — check token validity via userinfo
+        const userInfoRes = await fetchWithConnectionProxy("https://www.googleapis.com/oauth2/v1/userinfo", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${connection.accessToken}` },
+        }, effectiveProxy);
+        return { valid: userInfoRes.ok, error: userInfoRes.ok ? null : "Token expired or invalid" };
+      }
       case "pollinations": {
         // No-auth by default — validate reachability of the gateway.
         const res = await fetchWithConnectionProxy("https://gen.pollinations.ai/v1/models", {
@@ -1042,6 +1083,37 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Pollinations gateway is unreachable" };
+      }
+      case "openvecta": {
+        // OpenAI-compatible gateway — validate via /v1/models with Bearer.
+        const res = await fetchWithConnectionProxy("https://openvecta.com/v1/models", {
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "freebuff-web": {
+        // NextAuth.js session cookie validation via /api/auth/session.
+        let cookie = connection.apiKey.replace(/^Cookie:\s*/i, "").trim();
+        // Bare UUID token → wrap as session cookie
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cookie)) {
+          cookie = `__Secure-next-auth.session-token=${cookie}`;
+        }
+        const res = await fetchWithConnectionProxy("https://freebuff.com/api/auth/session", {
+          method: "GET",
+          headers: {
+            Cookie: cookie,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+          },
+        }, effectiveProxy);
+        if (res.status === 401 || res.status === 403) {
+          return { valid: false, error: "Invalid or expired session cookie" };
+        }
+        if (!res.ok) {
+          return { valid: false, error: `FreeBuff returned ${res.status}` };
+        }
+        const data = await res.json().catch(() => null);
+        const valid = !!(data && data.user);
+        return { valid, error: valid ? null : "Session accepted but no user — cookie may be expired" };
       }
       case "api-airforce": {
         // Session-cookie → api_key exchange. The user pastes the airforce_session

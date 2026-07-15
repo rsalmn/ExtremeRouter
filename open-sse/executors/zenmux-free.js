@@ -4,6 +4,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
 import { sseChunk } from "../utils/sse.js";
 import { tlsFetch } from "../utils/tlsClient.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 // ZenMux Free — session-cookie free-tier gateway.
 //
@@ -43,7 +44,7 @@ export class ZenmuxFreeExecutor extends BaseExecutor {
     super("zenmux-free", PROVIDERS["zenmux-free"]);
   }
 
-  async execute({ model, body, stream, credentials, signal, log }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const rawCookie = normalizeCookie(credentials?.apiKey || "");
     const ctoken = extractCtoken(rawCookie);
     if (!ctoken) {
@@ -100,12 +101,14 @@ export class ZenmuxFreeExecutor extends BaseExecutor {
 
     let upstream;
     try {
-      upstream = await tlsFetch(url.toString(), {
+      // C3 FIX: Use proxyAwareFetch when proxyOptions is set, fall back to tlsFetch
+      const fetchFn = proxyOptions?.connectionProxyEnabled ? proxyAwareFetch : tlsFetch;
+      upstream = await fetchFn(url.toString(), {
         method: "POST",
         headers: reqHeaders,
         body: JSON.stringify(anthropicBody),
         signal,
-      });
+      }, proxyOptions);
     } catch (err) {
       return {
         response: errorResponse(502, `ZenMux Free fetch failed: ${err?.message || err}`),
@@ -132,7 +135,7 @@ export class ZenmuxFreeExecutor extends BaseExecutor {
     const created = Math.floor(Date.now() / 1000);
 
     if (!stream) {
-      const txt = await collectText(upstream.body);
+      const txt = await collectText(upstream.body, signal);
       return {
         response: new Response(
           JSON.stringify({
@@ -162,6 +165,8 @@ export class ZenmuxFreeExecutor extends BaseExecutor {
 
         try {
           while (true) {
+            // C4 FIX: Check abort signal before each read
+            if (signal?.aborted) break;
             const { done, value } = await reader.read();
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
@@ -209,13 +214,14 @@ export class ZenmuxFreeExecutor extends BaseExecutor {
 }
 
 /** Collect text from an Anthropic-format SSE stream body. */
-async function collectText(body) {
+async function collectText(body, signal) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
   let fullText = "";
   try {
     while (true) {
+      if (signal?.aborted) break;
       const { done, value } = await reader.read();
       if (done) break;
       buf += decoder.decode(value, { stream: true });
