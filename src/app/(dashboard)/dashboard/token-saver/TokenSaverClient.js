@@ -31,6 +31,9 @@ export default function TokenSaverClient() {
   const [semanticCacheEnabled, setSemanticCacheEnabled] = useState(false);
   const [semanticCacheThreshold, setSemanticCacheThreshold] = useState(0.85);
   const [cacheStats, setCacheStats] = useState(null);
+  const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
+  const [pxpipeStatus, setPxpipeStatus] = useState({ installed: false, loaded: false, version: null, loading: true });
+  const [pxpipeInstalling, setPxpipeInstalling] = useState(false);
   const [locale, setLocale] = useState("en");
 
   const { copied, copy } = useCopyToClipboard();
@@ -155,6 +158,34 @@ export default function TokenSaverClient() {
     patchSetting({ ponytailLevel: level });
   };
 
+  const handlePxpipeToggle = (value) => {
+    setPxpipeEnabled(value);
+    patchSetting({ pxpipeEnabled: value });
+  };
+
+  const refreshPxpipeStatus = async () => {
+    setPxpipeStatus((s) => ({ ...s, loading: true }));
+    try {
+      const res = await fetch("/api/pxpipe/status", { headers: { "Cache-Control": "no-store" } });
+      const data = await res.json();
+      setPxpipeStatus({ ...data, loading: false });
+    } catch {
+      setPxpipeStatus({ installed: false, loaded: false, version: null, loading: false });
+    }
+  };
+
+  const handlePxpipeInstall = async () => {
+    setPxpipeInstalling(true);
+    try {
+      const res = await fetch("/api/pxpipe/install", { method: "POST" });
+      const data = await res.json();
+      await refreshPxpipeStatus();
+    } catch {
+      // non-fatal
+    }
+    setPxpipeInstalling(false);
+  };
+
   const handleSemanticCacheToggle = (value) => {
     setSemanticCacheEnabled(value);
     patchSetting({ semanticCacheEnabled: value });
@@ -184,7 +215,9 @@ export default function TokenSaverClient() {
           setPonytailLevel(data.ponytailLevel || "full");
           setSemanticCacheEnabled(!!data.semanticCacheEnabled);
           setSemanticCacheThreshold(typeof data.semanticCacheThreshold === "number" ? data.semanticCacheThreshold : 0.85);
+          setPxpipeEnabled(!!data.pxpipeEnabled);
           refreshHeadroomStatus();
+          refreshPxpipeStatus();
         }
       } catch {}
     };
@@ -455,6 +488,64 @@ export default function TokenSaverClient() {
                 Clear Cache
               </Button>
             </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Pxpipe — Multimodal Prompt Compression */}
+      <Card>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-text-muted">image_compressor</span>
+            <div>
+              <p className="text-sm font-medium text-text-main">
+                Pxpipe (Image Compression)
+              </p>
+              <p className="text-xs text-text-muted mt-0.5">
+                Render dense Claude-format contexts as PNG images before dispatch. Saves ~35-60% input tokens on large payloads.
+              </p>
+            </div>
+          </div>
+          <Toggle
+            checked={pxpipeEnabled}
+            onChange={() => handlePxpipeToggle(!pxpipeEnabled)}
+          />
+        </div>
+        {pxpipeEnabled && (
+          <div className="mt-4 flex flex-col gap-3 border-t border-border-subtle pt-3">
+            <div className="flex items-center gap-2 text-xs">
+              <span className={`material-symbols-outlined text-[14px] ${pxpipeStatus.installed ? "text-success" : "text-warning"}`}>
+                {pxpipeStatus.installed ? "check_circle" : "error"}
+              </span>
+              <span className="text-text-muted">
+                Package: {pxpipeStatus.installed ? `v${pxpipeStatus.version || "?"} installed` : "not installed"}
+              </span>
+              {pxpipeStatus.loaded && (
+                <Badge variant="success" size="sm" dot>Loaded</Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={pxpipeInstalling ? "progress_activity" : "download"}
+                onClick={handlePxpipeInstall}
+                disabled={pxpipeInstalling}
+              >
+                {pxpipeInstalling ? "Installing..." : pxpipeStatus.installed ? "Reinstall / Upgrade" : "Install Package"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="refresh"
+                onClick={refreshPxpipeStatus}
+              >
+                Refresh Status
+              </Button>
+            </div>
+            <p className="text-[11px] text-text-muted">
+              Only activates for Claude-format requests with text content above threshold. Fail-open — never blocks requests.
+            </p>
           </div>
         )}
       </Card>

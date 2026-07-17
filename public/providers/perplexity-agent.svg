@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0D0D1A"/>
+  <!-- Agent/multi-model symbol: interconnected nodes representing routing -->
+  <circle cx="32" cy="14" r="5" fill="#20A39E"/>
+  <circle cx="16" cy="38" r="5" fill="#20A39E" opacity="0.7"/>
+  <circle cx="48" cy="38" r="5" fill="#20A39E" opacity="0.7"/>
+  <circle cx="32" cy="50" r="5" fill="#20A39E" opacity="0.5"/>
+  <line x1="32" y1="14" x2="16" y2="38" stroke="#20A39E" stroke-width="2" opacity="0.5"/>
+  <line x1="32" y1="14" x2="48" y2="38" stroke="#20A39E" stroke-width="2" opacity="0.5"/>
+  <line x1="16" y1="38" x2="32" y2="50" stroke="#20A39E" stroke-width="2" opacity="0.4"/>
+  <line x1="48" y1="38" x2="32" y2="50" stroke="#20A39E" stroke-width="2" opacity="0.4"/>
+  <line x1="16" y1="38" x2="48" y2="38" stroke="#20A39E" stroke-width="2" opacity="0.3"/>
+</svg>

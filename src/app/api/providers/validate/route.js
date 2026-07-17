@@ -1070,6 +1070,67 @@ export async function POST(request) {
           }
           break;
         }
+        case "qwencloud": {
+          let cookie = apiKey.replace(/^Cookie:\s*/i, "").trim();
+          if (cookie.startsWith("cookie=")) cookie = cookie.slice(7).trim();
+          // Strip bx-ua/bx-umidtoken from credential for validation
+          cookie = cookie.replace(/bx-ua=[^\s;]+;?\s*/g, "").replace(/bx-umidtoken=[^\s;]+;?\s*/g, "").trim();
+          try {
+            const res = await fetch("https://home.qwencloud.com/tool/user/info.json", {
+              method: "GET",
+              headers: { Cookie: cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36" },
+            });
+            if (res.status === 401 || res.status === 403) { isValid = false; error = "Invalid or expired qwencloud.com session cookie"; }
+            else if (!res.ok) { isValid = false; error = `QwenCloud returned ${res.status}`; }
+            else {
+              const data = await res.json().catch(() => null);
+              isValid = !!(data?.data?.secToken);
+              if (!isValid) error = "Session accepted but no secToken — cookie may be expired";
+            }
+          } catch (err) {
+            isValid = false; error = err.message || "Failed to validate QwenCloud session";
+          }
+          break;
+        }
+        case "moonshot": {
+          try {
+            const res = await fetch("https://api.moonshot.ai/v1/models", {
+              headers: { Authorization: `Bearer ${apiKey}` },
+            });
+            isValid = res.ok;
+            if (!isValid) error = "Invalid Moonshot API key";
+          } catch (err) {
+            isValid = false;
+            error = err.message || "Failed to validate Moonshot key";
+          }
+          break;
+        }
+        case "featherless": {
+          try {
+            const res = await fetch("https://api.featherless.ai/v1/models?per_page=1", {
+              headers: { Authorization: `Bearer ${apiKey}` },
+            });
+            isValid = res.ok;
+            if (!isValid) error = "Invalid Featherless API key";
+          } catch (err) {
+            isValid = false;
+            error = err.message || "Failed to validate Featherless key";
+          }
+          break;
+        }
+        case "perplexity-agent": {
+          try {
+            const res = await fetch("https://api.perplexity.ai/v1/models", {
+              headers: { Authorization: `Bearer ${apiKey}` },
+            });
+            isValid = res.ok;
+            if (!isValid) error = "Invalid Perplexity API key";
+          } catch (err) {
+            isValid = false;
+            error = err.message || "Failed to validate Perplexity key";
+          }
+          break;
+        }
         case "openvecta": {
           try {
             const res = await fetch("https://openvecta.com/v1/models", {

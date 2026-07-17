@@ -1,3 +1,150 @@
+# v0.7.0 (2026-07-16)
+
+## Features
+- **Combos**: total redesign — 3 tabs (Overview/Combos/Templates), KPI row, search/filter, expandable cards with strategy visual indicators, drag-reorder models
+- **v0.app**: full executor rewrite — new diff protocol parser replacing v0.dev SSE, profile + credit balance display
+- **FreeBuff**: new cookie provider with NextAuth SSE executor, profile display, auto-refresh cookies
+- **OpenVecta**: new API-key provider (OpenAI-compatible, 46k+ models via modelsFetcher)
+- **Perplexity Agent**: new API-key provider — multi-model routing via Responses API (33+ models)
+- **Moonshot AI**: new API-key provider — kimi-k3 with reasoning_effort "max" support
+- **Featherless**: new API-key provider — 46,000+ HuggingFace models, live model discovery
+- **QwenCloud**: new cookie provider — multi-step auth (cookie → secToken → accessToken → SSE chat), profile display
+- **Pxpipe**: 5th token saver — multimodal prompt compression via in-process pxpipe-proxy library
+- **Semantic Cache**: Jaccard similarity-based response cache with configurable threshold + per-key identity scoping
+- **Retry**: exponential backoff + jitter + retry visualization chart in Usage page
+- **Health Timeline**: SVG sparkline in provider detail (hourly success/error bars + latency line)
+- **Cost Estimator**: real-time cost estimate in Playground stats bar
+- **Thinking Level Picker**: per-model dropdown (auto/none/minimal/low/medium/high/xhigh/max) with suffix-based forced reasoning
+- **Thought Level toggle**: per-provider global thinking override (uncommented + renamed)
+- **New Badge**: "NEW" badge for unseen providers + sidebar nav items
+- **Auto-rotate proxy**: no-auth providers can rotate across all active proxy pools (round-robin/random)
+- **Webhook Alerts**: dedicated page with Discord/Telegram/Generic channels + event toggles
+- **Web Saver UI**: Token Saver card redesign with pxpipe + semantic cache toggles
+- **Vault Key Pool**: AES-256-GCM encrypted Xiaomi MiMo key pool (69 keys) with LRU rotation
+- **Playground**: chat + compare mode with streaming
+- **Overview dashboard**: KPI cards, token saver status, free providers grid
+- **Combo Templates**: prebuilt combo library with one-click apply
+- **TLS Impersonation**: wreq-js Chrome 124 fingerprint with circuit breaker
+- **Ponytail**: dedicated regression tests for code compaction prompt system
+- **RTK git-log filter**: JS-native compactor for git log output
+- **Caveman**: upstream-aligned style rules for all 6 levels
+- **Kimi K3 free button**: referral URL on Moonshot provider page
+- **gpt-5.6-sol max thinking**: max reasoning_effort support for gpt-5.6-sol only
+- **FreeBuff/v0 profiles**: avatar, name, email, session expiry display
+- **FreeBuff/v0 auto-refresh**: capture Set-Cookie from upstream + update connection automatically
+
+## Fixes
+- **Security — Critical**: SSRF guards on proxy/relay URLs + prefetchRemoteImages; body size limits (10MB/4MB/2MB); rate limiting per API key/IP; semantic cache cross-user leak (per-key identity)
+- **Security — High**: circuit breaker half-open probe cap + slot leak on abort; auth + ACL enforced regardless of requireApiKey; HealthTimeline interval leak; alerts stale closure + debounce; combos delete stale closure
+- **Kimi/Step**: normalize reasoning_effort to backend enum (minimal→low, auto→omit)
+- **Meta AI**: AttachmentInput GraphQL schema change (omit attachments field)
+- **v0.app**: 3 critical + 4 medium audit fixes (AbortSignal, per-path text tracking, extractTextFromValue, dedupe finish, content-type check)
+- **Thinking suffix**: strip (level) from upstream model in chatCore — pass original model to translator for applyThinking
+- **MITM**: stale-lock recovery (validate PID, auto-delete orphan lock files)
+- **Webhook**: camelCase/snake_case key mismatch (alerts silently dropped)
+- **Headroom**: Kiro conversationState compression path added
+- **Gemini-CLI**: thinking budget floor (min 1024) + validated toolConfig for tools
+- **GitHub Copilot**: account identity labeling via /user fetch
+- **RTK/find**: Windows backslash path detection + drive-letter support in autodetect
+- **Codex**: capacity/rate_limit SSE patterns added to overloaded detector
+- **Antigravity**: fingerprint aligned with IDE Desktop 2.1.1
+- **Pricing**: added claude-opus-4.7/4.8, claude-sonnet-5, claude-fable-5, gpt-5.4/5.5/5.6 variants
+- **Provider audit**: api-airforce missing from validate, mimo-free/devin/vertex test probes, openvecta validate, o1/o3/o4 + claude pattern tightening, zenmux-free icon, vault cooldown cap, reasoning_effort whitelist
+
+---
+
+# v0.6.9 (2026-07-14)
+
+## Features
+- Semantic Cache: Jaccard similarity-based response cache
+- Retry: exponential backoff + jitter + retry visualization chart
+- Health Timeline: SVG sparkline in provider detail
+- Model Cost Estimator in Playground stats bar
+- RTK git-log filter + Caveman upstream-aligned style rules
+- Ponytail: dedicated regression tests
+
+## Fixes
+- Step/Kimi reasoning_effort normalization
+- buildOutput missing from RTK registry
+- PassthroughModelsSection dead import removed
+- Meta AI AttachmentInput GraphQL schema change
+
+---
+
+# v0.6.7 (2026-07-10)
+
+## Features
+- New badge system for unseen providers + sidebar nav
+- Per-model Thinking Level Picker with suffix-based forced reasoning
+- ZenMux: live model fetcher + plan auto-detect from ctoken
+- x.ai registry: grok-4.5, multi-agent, imagine models + thinkingConfig
+
+## Fixes
+- Thinking suffix leak: strip (level) from upstream model
+- Webhook alerts: camelCase/snake_case bug (all real alerts silently dropped)
+
+---
+
+# v0.6.6 (2026-07-08)
+
+## Features
+- Overview dashboard page with KPI cards
+- Token saved tracking pipeline (chatCore → usageRepo → _meta counter)
+- Providers page total redesign (modular components)
+- Usage page total redesign (Overview/Logs/Details tabs)
+- 26 SVG provider icons
+
+## Fixes
+- Cline/ClinePass 401 auth flow
+- TDZ errors (totalLatency + savedTokens)
+- HuggingChat conversationId + DeepSeek PoW solver
+- Select double-chevron fix
+
+---
+
+# v0.6.4 (2026-07-06)
+
+## Features
+- Kiro Claude Sonnet 5 support
+- Providers page UX improvements
+- OAuth providers (Windsurf, Trae, Cody)
+- Usage page total redesign
+
+---
+
+# v0.6.2 (2026-07-05)
+
+## Features
+- Hierarchical Swarm combo strategy
+- Reliability layer: Circuit Breaker, Health Monitor, Per-Key Model ACL
+- 20 cookie providers (ported from OmniRoute)
+- Devin CLI OAuth provider
+- TLS impersonation via wreq-js (Chrome 124 fingerprint)
+- ZenMux Free cookie provider
+- api.airforce cookie provider (session→API-key exchange)
+- Combo Template Library
+
+## Fixes
+- Cline 401 + ClinePass 401 auth detection
+- Cookie providers authType mismatch
+
+---
+
+# v0.6.0 (2026-07-04)
+
+## Features
+- ExtremeRouter initial fork from 9router
+- Devin CLI OAuth provider
+- Per-provider thinking config (on/off/level)
+- Hierarchical Swarm combo routing
+- Circuit Breaker + Health Monitor + Per-Key ACL
+
+## Fixes
+- Cline/ClinePass authentication flow
+- TDZ errors in streaming/non-streaming handlers
+
+---
+
 # v0.5.18 (2026-07-03)
 
 ## Features

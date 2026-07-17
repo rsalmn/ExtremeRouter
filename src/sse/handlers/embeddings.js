@@ -8,6 +8,8 @@ import {
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
+import { readBodyWithLimit } from "../utils/bodyLimiter.js";
+import { checkRateLimit, evictExpiredBuckets } from "../utils/rateLimiter.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
@@ -22,8 +24,14 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 export async function handleEmbeddings(request) {
   let body;
   try {
-    body = await request.json();
-  } catch {
+    // C2 FIX: Limit body size (4 MB for embeddings — typically smaller than chat)
+    const bodyText = await readBodyWithLimit(request, 4 * 1024 * 1024);
+    body = JSON.parse(bodyText);
+  } catch (e) {
+    if (e.message?.includes("too large")) {
+      return errorResponse(HTTP_STATUS.BAD_REQUEST, e.message);
+    }
+    log.warn("EMBEDDINGS", "Invalid JSON body");
     log.warn("EMBEDDINGS", "Invalid JSON body");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
@@ -35,6 +43,14 @@ export async function handleEmbeddings(request) {
 
   // Log API key (masked)
   const apiKey = extractApiKey(request);
+
+  // Rate limiting (same pattern as chat.js)
+  const rlKey = apiKey || request.headers.get("x-9r-real-ip") || "anonymous";
+  const rl = checkRateLimit(rlKey);
+  evictExpiredBuckets();
+  if (!rl.allowed) {
+    return new Response(JSON.stringify({ error: { message: `Rate limit exceeded. Try again in ${Math.ceil(rl.retryAfterMs / 1000)} seconds.`, type: "rate_limit_error", code: "rate_limited" } }), { status: 429, headers: { "Content-Type": "application/json", "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } });
+  }
   if (apiKey) {
     log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}`);
   } else {

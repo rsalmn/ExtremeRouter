@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, Button, Input, Toggle, PageHeader, Badge } from "@/shared/components";
 
 const EVENT_OPTIONS = [
@@ -30,20 +30,36 @@ export default function AlertsPage() {
 
   useEffect(() => { fetchSettings(); }, [fetchSettings]);
 
+  // Cleanup: clear debounce timer on unmount to prevent state updates on unmounted component
+  useEffect(() => () => { if (patchTimer.current) clearTimeout(patchTimer.current); }, []);
+
+  // H4 FIX: Use a ref to always read the latest settings when building the PATCH
+  // body, avoiding stale closure on concurrent keystrokes. Debounce the actual
+  // network call to prevent data loss from rapid successive writes.
+  const patchTimer = useRef(null);
   const patch = useCallback(async (key, value, subKey) => {
-    const body = subKey
-      ? { [key]: { ...(settings[key] || {}), [subKey]: value } }
-      : { [key]: value };
-    setSettings(prev => subKey
-      ? { ...prev, [key]: { ...(prev?.[key] || {}), [subKey]: value } }
-      : { ...prev, [key]: value }
-    );
-    try {
-      await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      setSavedField(subKey || key);
-      setTimeout(() => setSavedField(null), 1500);
-    } catch { /* non-fatal */ }
-  }, [settings]);
+    // Build body from current settings state (functional read)
+    setSettings(prev => {
+      const updated = subKey
+        ? { ...prev, [key]: { ...(prev?.[key] || {}), [subKey]: value } }
+        : { ...prev, [key]: value };
+      // Debounce the network write: clear any pending write and schedule a new one
+      if (patchTimer.current) clearTimeout(patchTimer.current);
+      patchTimer.current = setTimeout(async () => {
+        try {
+          const body = subKey
+            ? { [key]: { ...(updated[key] || {}), [subKey]: value } }
+            : { [key]: value };
+          const res = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          if (res.ok) {
+            setSavedField(subKey || key);
+            setTimeout(() => setSavedField(null), 1500);
+          }
+        } catch { /* non-fatal */ }
+      }, 500); // 500ms debounce
+      return updated;
+    });
+  }, []);
 
   const handleTest = async () => {
     setTesting(true);

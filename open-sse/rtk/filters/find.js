@@ -9,7 +9,7 @@ export function find(input) {
   const byDir = new Map();
 
   for (const path of lines) {
-    const lastSlash = path.lastIndexOf("/");
+    const lastSlash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
     let dir;
     let basename;
     if (lastSlash === -1) {

@@ -27,6 +27,7 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 // in-flight per connection at a time.
 const cookieRefreshInProgress = new Set();
 import { injectCaveman } from "../rtk/caveman.js";
+import { compressWithPxpipe, formatPxpipeLog, formatPxpipeSizeLog, isPxpipePhantomSavings } from "../rtk/pxpipe.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
@@ -41,7 +42,7 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, semanticCacheEnabled, semanticCacheThreshold }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, semanticCacheEnabled, semanticCacheThreshold, pxpipeEnabled, pxpipeDir, pxpipeMinChars, pxpipeTimeoutMs }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -55,7 +56,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Only applies to non-streaming, tool-free, sufficiently-long requests.
   if (semanticCacheEnabled && isCacheable(body, false, provider, model)) {
     const threshold = typeof semanticCacheThreshold === "number" ? semanticCacheThreshold : 0.85;
-    const cached = cacheLookup(provider, model, body, threshold);
+    // SECURITY: Partition cache by API key to prevent cross-user leakage
+    const cacheIdentity = apiKey || connectionId || "local";
+    const cached = cacheLookup(provider, model, body, threshold, cacheIdentity);
     if (cached) {
       log?.info?.("CACHE", `semantic cache ${cached.exact ? "HIT" : "near-hit"} (${(cached.similarity * 100).toFixed(0)}% similarity) — returning cached response`);
       const cachedResponse = cached.response.clone ? cached.response.clone() : cached.response;
@@ -138,7 +141,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
     // Convert remote image URLs to base64 for targets that can't fetch URLs.
     try {
-      const n = await prefetchRemoteImages(body, sourceFormat, targetFormat, { signal: undefined });
+      // C4 FIX: Pass a real abort signal with timeout (not undefined) to prevent
+      // indefinite hangs on slow/unresponsive image hosts. SSRF guard is applied
+      // inside fetchImageAsBase64 via resolvePinnedIps which validates resolved IPs.
+      const imgCtrl = new AbortController();
+      const imgTimer = setTimeout(() => imgCtrl.abort(), 10_000); // 10s max per prefetch
+      const n = await prefetchRemoteImages(body, sourceFormat, targetFormat, { signal: imgCtrl.signal, timeoutMs: 10_000 });
+      clearTimeout(imgTimer);
       if (n > 0) log?.debug?.("MODALITY", `prefetched ${n} remote image(s) for ${targetFormat}`);
     } catch (e) { log?.warn?.("MODALITY", `image prefetch failed: ${e.message}`); }
   }
@@ -213,13 +222,34 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("PONYTAIL", `${ponytailLevel} | ${finalFormat}`);
   }
 
-  // Compute total tokens saved by RTK + Headroom for this request.
-  // RTK measures bytes saved → approximate tokens (bytes/4).
-  // Headroom reports tokens_saved directly.
+  // Pxpipe: multimodal prompt compression — render dense Claude bodies as PNGs.
+  // Runs after Caveman/Ponytail so it compresses the final body including injected prompts.
+  // Only applies to Claude format; fail-open on any error.
+  const pxpipeDiagnostics = {};
+  const pxpipeStats = await compressWithPxpipe(translatedBody, {
+    enabled: pxpipeEnabled && finalFormat === "claude",
+    pxpipeDir,
+    minChars: pxpipeMinChars,
+    timeoutMs: pxpipeTimeoutMs,
+    diagnostics: pxpipeDiagnostics,
+  });
+  const pxpipeLine = formatPxpipeLog(pxpipeStats);
+  const pxpipeSizeLine = formatPxpipeSizeLog(pxpipeDiagnostics);
+  if (pxpipeLine) {
+    log?.info?.("PXPIPE", `${pxpipeLine}${pxpipeSizeLine ? ` | ${pxpipeSizeLine}` : ""}`);
+    if (isPxpipePhantomSavings(pxpipeStats, pxpipeDiagnostics)) {
+      log?.warn?.("PXPIPE", `reported token delta, but body barely shrank | ${pxpipeSizeLine}`);
+    }
+  } else if (pxpipeEnabled && finalFormat === "claude") {
+    log?.warn?.("PXPIPE", `skipped: ${pxpipeDiagnostics.reason || "unavailable"}`);
+  }
+
+  // Compute total tokens saved by RTK + Headroom + Pxpipe for this request.
   const rtkBytesSaved = rtkStats ? (rtkStats.bytesBefore || 0) - (rtkStats.bytesAfter || 0) : 0;
   const rtkTokensSaved = Math.round(rtkBytesSaved / 4);
   const headroomTokensSaved = headroomStats?.tokens_saved || 0;
-  const savedTokens = rtkTokensSaved + headroomTokensSaved;
+  const pxpipeTokensSaved = pxpipeStats?.tokensSaved || 0;
+  const savedTokens = rtkTokensSaved + headroomTokensSaved + pxpipeTokensSaved;
 
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
@@ -307,9 +337,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // Semantic Cache — store successful non-streaming response for future lookups.
     if (semanticCacheEnabled && !stream && providerResponse?.ok && isCacheable(body, false, provider, model)) {
       try {
-        // Clone the response so we can both return it and cache it.
         const cloned = providerResponse.clone ? providerResponse.clone() : providerResponse;
-        cacheStore(provider, model, body, cloned);
+        const cacheIdentity = apiKey || connectionId || "local";
+        cacheStore(provider, model, body, cloned, undefined, cacheIdentity);
       } catch { /* fail-open: cache write failure should never break a request */ }
     }
   } catch (error) {

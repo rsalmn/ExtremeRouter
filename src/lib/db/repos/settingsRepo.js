@@ -54,6 +54,11 @@ const DEFAULT_SETTINGS = {
   cavemanLevel: "full",
   ponytailEnabled: false,
   ponytailLevel: "full",
+  // Pxpipe — multimodal prompt compression (in-process library)
+  pxpipeEnabled: false,
+  pxpipeAutoInstall: false,
+  pxpipeMinChars: 25000,
+  pxpipeTimeoutMs: 5000,
   // Semantic Cache — Jaccard similarity-based response cache
   semanticCacheEnabled: false,
   semanticCacheThreshold: 0.85,

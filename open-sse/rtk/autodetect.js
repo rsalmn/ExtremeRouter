@@ -90,8 +90,10 @@ function isGrepLine(line) {
 function isPathLike(line) {
   const t = line.trim();
   if (t.length === 0) return false;
-  if (t.includes(":")) return false;
-  return t.startsWith(".") || t.startsWith("/") || t.includes("/");
+  // Allow Windows drive-letter paths like C:\Users\... (colon at position 1 + backslash)
+  const isWinPath = /^[A-Za-z]:[\\/]/.test(t);
+  if (t.includes(":") && !isWinPath) return false;
+  return t.startsWith(".") || t.startsWith("/") || t.includes("/") || t.includes("\\") || isWinPath;
 }
 
 function isMostlyPorcelain(head) {

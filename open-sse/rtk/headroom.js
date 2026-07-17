@@ -171,6 +171,46 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
       return data;
     }
 
+    // Kiro shape: conversationState holds history + currentMessage.
+    // Flatten to OpenAI messages, compress, then rebuild conversationState.
+    if (format === "kiro" && body?.conversationState) {
+      const cs = body.conversationState;
+      const history = cs.history || [];
+      const messages = [];
+      for (const turn of history) {
+        if (turn.role === "user" && turn.userInputMessageContext?.toolResults) {
+          // Flatten tool results into text
+          for (const tr of turn.userInputMessageContext.toolResults) {
+            if (tr.content?.text) messages.push({ role: "user", content: tr.content.text });
+          }
+        } else if (turn.role === "assistant" && turn.assistantResponse?.content) {
+          for (const part of turn.assistantResponse.content) {
+            if (part.text) messages.push({ role: "assistant", content: part.text });
+          }
+        }
+      }
+      // Add current message
+      const currentText = cs.currentMessage?.userInputMessageContext?.inputMessage?.blocks
+        ?.filter((b) => b.text?.content).map((b) => b.text.content).join("\n");
+      if (currentText) messages.push({ role: "user", content: currentText });
+
+      if (messages.length === 0) {
+        setDiagnostic(diagnostics, "kiro conversationState yielded no messages");
+        return null;
+      }
+      const data = await callCompress(url, messages, model, timeoutMs, compressUserMessages, diagnostics || {});
+      if (!data) return null;
+      // Replace the largest text-heavy message in the current message with compressed version.
+      const lastUserIdx = messages.length - 1;
+      if (cs.currentMessage?.userInputMessageContext?.inputMessage?.blocks) {
+        const blocks = cs.currentMessage.userInputMessageContext.inputMessage.blocks;
+        const textBlock = blocks.find((b) => b.text?.content);
+        if (textBlock?.text) textBlock.text.content = messages[lastUserIdx]?.content || textBlock.text.content;
+      }
+      if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
+      return data;
+    }
+
     // OpenAI shape: messages/input go straight to the proxy.
     const key = Array.isArray(body.messages) ? "messages"
       : Array.isArray(body.input) ? "input"

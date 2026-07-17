@@ -1,4 +1,4 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
+import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -37,7 +37,23 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     if (FREE_PROVIDERS[providerId]?.noAuth) {
       const settings = await getSettings();
       const override = (settings.providerStrategies || {})[providerId] || {};
-      const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: override.proxyPoolId || "" });
+      const rotateStrategy = override.rotateStrategy || "none";
+
+      let poolId = override.proxyPoolId || "";
+
+      // Auto-rotate: if rotation strategy is set, pick from all active pools
+      if (rotateStrategy !== "none" && rotateStrategy) {
+        try {
+          const allPools = await getProxyPools({ isActive: true });
+          const poolIds = allPools.map((p) => p.id).filter(Boolean);
+          if (poolIds.length >= 2) {
+            const { pickProxyPoolId } = await import("@/lib/network/pickProxyPoolId.js");
+            poolId = pickProxyPoolId(poolIds, rotateStrategy, providerId) || poolId;
+          }
+        } catch { /* fail-open: fall back to static poolId */ }
+      }
+
+      const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: poolId });
       return {
         id: "noauth",
         connectionName: "Public",

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0D0D1A"/>
+  <!-- Cloud symbol representing "QwenCloud" -->
+  <path d="M20 40 Q12 40 12 32 Q12 26 18 25 Q20 18 28 18 Q36 18 38 25 Q46 25 46 33 Q46 40 38 40 Z" fill="#615CED"/>
+  <path d="M20 40 Q12 40 12 32 Q12 26 18 25 Q20 18 28 18 Q36 18 38 25 Q46 25 46 33 Q46 40 38 40 Z" fill="#818CF8" opacity="0.4"/>
+</svg>

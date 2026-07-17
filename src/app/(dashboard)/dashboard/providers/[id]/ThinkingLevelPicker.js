@@ -45,9 +45,9 @@ export default function ThinkingLevelPicker({ caps, selectedLevel, onSelect }) {
   const options = ALL_LEVELS.filter((opt) => {
     if (opt.value === "auto") return true;
     if (opt.value === "none") return caps?.thinkingCanDisable !== false;
-    // For budget-based levels, respect thinkingRange if set (clamp).
-    // Most models support all levels; the range is a soft clamp applied
-    // downstream in applyThinking, so we show all options here.
+    // "max" reasoning_effort is only supported by specific models (e.g. gpt-5.6-sol).
+    // Other models reject it — hide from picker unless thinkingMaxEffort is set.
+    if (opt.value === "max") return caps?.thinkingMaxEffort === true;
     return true;
   });
 

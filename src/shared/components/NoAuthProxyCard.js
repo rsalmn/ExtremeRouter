@@ -8,9 +8,16 @@ import Badge from "./Badge";
 
 const NONE_PROXY_POOL_VALUE = "__none__";
 
+const ROTATE_OPTIONS = [
+  { value: "none", label: "None (single pool)" },
+  { value: "round-robin", label: "Round Robin — cycle through all pools" },
+  { value: "random", label: "Random — pick a random pool each request" },
+];
+
 export default function NoAuthProxyCard({ providerId }) {
   const [proxyPools, setProxyPools] = useState([]);
   const [proxyPoolId, setProxyPoolId] = useState(NONE_PROXY_POOL_VALUE);
+  const [rotateStrategy, setRotateStrategy] = useState("none");
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
 
@@ -24,21 +31,23 @@ export default function NoAuthProxyCard({ providerId }) {
       setProxyPools(poolData.proxyPools || []);
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProxyPoolId(override.proxyPoolId || NONE_PROXY_POOL_VALUE);
+      setRotateStrategy(override.rotateStrategy || "none");
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [providerId]);
 
-  const handleChange = async (newValue) => {
-    setProxyPoolId(newValue);
+  const patchSettings = async (patch) => {
     setSaving(true);
     try {
       const res = await fetch("/api/settings", { cache: "no-store" });
       const data = res.ok ? await res.json() : {};
       const current = data.providerStrategies || {};
       const override = { ...(current[providerId] || {}) };
-      if (newValue === NONE_PROXY_POOL_VALUE) delete override.proxyPoolId;
-      else override.proxyPoolId = newValue;
       const updated = { ...current };
+      Object.assign(override, patch);
+      // Clean up empty values
+      if (!override.proxyPoolId) delete override.proxyPoolId;
+      if (!override.rotateStrategy || override.rotateStrategy === "none") delete override.rotateStrategy;
       if (Object.keys(override).length === 0) delete updated[providerId];
       else updated[providerId] = override;
       await fetch("/api/settings", {
@@ -49,11 +58,24 @@ export default function NoAuthProxyCard({ providerId }) {
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1500);
     } catch (e) {
-      console.log("Save proxyPoolId error:", e);
+      console.log("Save settings error:", e);
     } finally {
       setSaving(false);
     }
   };
+
+  const handlePoolChange = (newValue) => {
+    setProxyPoolId(newValue);
+    patchSettings({ proxyPoolId: newValue === NONE_PROXY_POOL_VALUE ? "" : newValue });
+  };
+
+  const handleRotateChange = (newValue) => {
+    setRotateStrategy(newValue);
+    patchSettings({ rotateStrategy: newValue });
+  };
+
+  const isRotating = rotateStrategy !== "none";
+  const canRotate = proxyPools.length >= 2;
 
   return (
     <Card>
@@ -67,16 +89,35 @@ export default function NoAuthProxyCard({ providerId }) {
         </div>
         {savedFlash && <Badge variant="success" size="sm">Saved</Badge>}
       </div>
-      <Select
-        label="Proxy Pool"
-        value={proxyPoolId}
-        onChange={(e) => handleChange(e.target.value)}
-        disabled={saving}
-        options={[
-          { value: NONE_PROXY_POOL_VALUE, label: "None (direct)" },
-          ...proxyPools.map((pool) => ({ value: pool.id, label: pool.name })),
-        ]}
-      />
+      <div className="flex flex-col gap-4">
+        {/* Rotation Strategy */}
+        <Select
+          label="Rotation Strategy"
+          value={rotateStrategy}
+          onChange={(e) => handleRotateChange(e.target.value)}
+          disabled={saving}
+          hint={isRotating
+            ? (canRotate ? `Rotating across ${proxyPools.length} active pools` : "Need ≥2 active pools for rotation")
+            : "Distribute requests across all active proxy pools"}
+          options={ROTATE_OPTIONS.map((opt) => ({
+            ...opt,
+            // Disable round-robin/random if fewer than 2 pools
+            ...((opt.value !== "none" && !canRotate) ? { label: `${opt.label} (need ≥2 pools)` } : {}),
+          }))}
+        />
+        {/* Proxy Pool — disabled when rotation is active */}
+        <Select
+          label="Proxy Pool"
+          value={proxyPoolId}
+          onChange={(e) => handlePoolChange(e.target.value)}
+          disabled={saving || isRotating}
+          hint={isRotating ? "Disabled — rotation auto-selects from all pools" : undefined}
+          options={[
+            { value: NONE_PROXY_POOL_VALUE, label: "None (direct)" },
+            ...proxyPools.map((pool) => ({ value: pool.id, label: pool.name })),
+          ]}
+        />
+      </div>
     </Card>
   );
 }

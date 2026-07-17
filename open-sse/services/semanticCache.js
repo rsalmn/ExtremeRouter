@@ -72,11 +72,13 @@ function extractCacheableText(messages) {
 
 /**
  * Build a cache key from provider + model + normalized message text hash.
+ * SECURITY: Includes a hash of the API key to prevent cross-user cache leakage.
+ * Without this, user A's cached response could be served to user B in multi-user deployments.
  */
-function buildCacheKey(provider, model, text) {
+function buildCacheKey(provider, model, text, identity = "") {
   // Simple FNV-1a hash (no crypto needed for cache keys)
   let hash = 2166136261;
-  const str = `${provider}::${model}::${text}`;
+  const str = `${identity}::${provider}::${model}::${text}`;
   for (let i = 0; i < str.length; i++) {
     hash ^= str.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
@@ -115,11 +117,11 @@ export function isCacheable(body, stream, provider, model) {
  * @param {number} threshold - Jaccard threshold for near-match (0..1)
  * @returns {{ response: object, similarity: number, exact: boolean } | null}
  */
-export function cacheLookup(provider, model, body, threshold = DEFAULT_THRESHOLD) {
+export function cacheLookup(provider, model, body, threshold = DEFAULT_THRESHOLD, identity = "") {
   const text = extractCacheableText(body.messages);
   if (!text) { STATS.misses++; return null; }
 
-  const key = buildCacheKey(provider, model, text);
+  const key = buildCacheKey(provider, model, text, identity);
   const now = Date.now();
 
   // 1. Exact match
@@ -142,6 +144,9 @@ export function cacheLookup(provider, model, body, threshold = DEFAULT_THRESHOLD
       STATS.evicted++;
       continue;
     }
+    // SECURITY: Only match entries from the same identity (API key) to prevent
+    // cross-user cache leakage.
+    if (entry.identity !== identity) continue;
     if (entry.provider !== provider || entry.model !== model) continue;
 
     const sim = jaccardSimilarity(queryTokens, entry.tokenSet);
@@ -170,11 +175,11 @@ export function cacheLookup(provider, model, body, threshold = DEFAULT_THRESHOLD
  * @param {object} response - the response data to cache
  * @param {number} ttlMs - time-to-live in milliseconds
  */
-export function cacheStore(provider, model, body, response, ttlMs = DEFAULT_TTL_MS) {
+export function cacheStore(provider, model, body, response, ttlMs = DEFAULT_TTL_MS, identity = "") {
   const text = extractCacheableText(body.messages);
   if (!text) return;
 
-  const key = buildCacheKey(provider, model, text);
+  const key = buildCacheKey(provider, model, text, identity);
   const now = Date.now();
 
   // Evict expired entries (lazy GC)
@@ -197,6 +202,7 @@ export function cacheStore(provider, model, body, response, ttlMs = DEFAULT_TTL_
   CACHE.set(key, {
     provider,
     model,
+    identity,
     response,
     tokenSet: tokenize(text),
     text,
