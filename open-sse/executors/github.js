@@ -17,6 +17,26 @@ export class GithubExecutor extends BaseExecutor {
     this.knownCodexModels = new Set();
   }
 
+  // Fetch GitHub account identity for labeling connections by account.
+  // Returns { login, email } or null.
+  async fetchAccountIdentities(accessToken) {
+    if (!accessToken) return null;
+    try {
+      const res = await fetch("https://api.github.com/user", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/vnd.github+json",
+          "User-Agent": "ExtremeRouter",
+        },
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return { login: data?.login || "", email: data?.email || "" };
+    } catch {
+      return null;
+    }
+  }
+
   buildUrl(model, stream, urlIndex = 0) {
     return this.config.baseUrl;
   }

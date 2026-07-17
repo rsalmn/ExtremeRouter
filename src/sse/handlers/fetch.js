@@ -8,6 +8,8 @@ import {
 import { getSettings, getCombos } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleFetchCore } from "open-sse/handlers/fetch/index.js";
+import { readBodyWithLimit } from "../utils/bodyLimiter.js";
+import { checkRateLimit, evictExpiredBuckets } from "../utils/rateLimiter.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
@@ -24,8 +26,14 @@ import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 export async function handleFetch(request) {
   let body;
   try {
-    body = await request.json();
-  } catch {
+    // C2 FIX: Limit body size (2 MB for fetch — URLs + small payloads)
+    const bodyText = await readBodyWithLimit(request, 2 * 1024 * 1024);
+    body = JSON.parse(bodyText);
+  } catch (e) {
+    if (e.message?.includes("too large")) {
+      return errorResponse(HTTP_STATUS.BAD_REQUEST, e.message);
+    }
+    log.warn("FETCH", "Invalid JSON body");
     log.warn("FETCH", "Invalid JSON body");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
@@ -41,6 +49,14 @@ export async function handleFetch(request) {
 
   // Log API key (masked)
   const apiKey = extractApiKey(request);
+
+  // Rate limiting
+  const rlKey = apiKey || request.headers.get("x-9r-real-ip") || "anonymous";
+  const rl = checkRateLimit(rlKey);
+  evictExpiredBuckets();
+  if (!rl.allowed) {
+    return new Response(JSON.stringify({ error: { message: `Rate limit exceeded. Try again in ${Math.ceil(rl.retryAfterMs / 1000)} seconds.`, type: "rate_limit_error", code: "rate_limited" } }), { status: 429, headers: { "Content-Type": "application/json", "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } });
+  }
   if (apiKey) {
     log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}`);
   } else {

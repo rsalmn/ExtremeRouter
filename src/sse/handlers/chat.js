@@ -8,10 +8,13 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
+import { readBodyWithLimit } from "../utils/bodyLimiter.js";
+import { checkRateLimit, evictExpiredBuckets } from "../utils/rateLimiter.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
+import { getPxpipeDir } from "@/lib/pxpipe/manager.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat, handleSwarmChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
@@ -20,7 +23,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
-import { recordBreakerSuccess, recordBreakerFailure, isRetryableFailure } from "open-sse/services/circuitBreaker.js";
+import { recordBreakerSuccess, recordBreakerFailure, isRetryableFailure, releaseBreakerProbe } from "open-sse/services/circuitBreaker.js";
 import { recordHealthSample } from "open-sse/services/healthMonitor.js";
 import { getApiKeyByKey } from "@/lib/localDb";
 
@@ -32,8 +35,13 @@ import { getApiKeyByKey } from "@/lib/localDb";
 export async function handleChat(request, clientRawRequest = null) {
   let body;
   try {
-    body = await request.json();
-  } catch {
+    // C2 FIX: Limit body size to prevent OOM/DoS (10 MB max for chat)
+    const bodyText = await readBodyWithLimit(request, 10 * 1024 * 1024);
+    body = JSON.parse(bodyText);
+  } catch (e) {
+    if (e.message?.includes("too large")) {
+      return errorResponse(HTTP_STATUS.BAD_REQUEST, e.message);
+    }
     log.warn("CHAT", "Invalid JSON body");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
@@ -62,6 +70,32 @@ export async function handleChat(request, clientRawRequest = null) {
   // Log API key (masked)
   const authHeader = request.headers.get("Authorization");
   const apiKey = extractApiKey(request);
+
+  // C3 FIX: Rate limiting — keyed on API key or client IP
+  const rateLimitKey = apiKey || clientRawRequest?.headers?.["x-9r-real-ip"] || "anonymous";
+  const rateLimit = checkRateLimit(rateLimitKey);
+  evictExpiredBuckets(); // lazy eviction
+  if (!rateLimit.allowed) {
+    log.warn("RATE", `Rate limited: ${rateLimitKey.slice(0, 12)}... retry in ${Math.ceil(rateLimit.retryAfterMs / 1000)}s`);
+    return new Response(
+      JSON.stringify({
+        error: {
+          message: `Rate limit exceeded. Try again in ${Math.ceil(rateLimit.retryAfterMs / 1000)} seconds.`,
+          type: "rate_limit_error",
+          code: "rate_limited",
+        },
+      }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(Math.ceil(rateLimit.retryAfterMs / 1000)),
+          "X-RateLimit-Remaining": String(rateLimit.remaining),
+        },
+      },
+    );
+  }
+
   if (authHeader && apiKey) {
     const masked = log.maskKey(apiKey);
     log.debug("AUTH", `API Key: ${masked}`);
@@ -90,7 +124,10 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Per-Key Model Access Control: if the resolved API key has an allowedModels
   // list, reject requests to models not in the list.
-  if (settings.requireApiKey && apiKey) {
+  // H2 FIX: Enforce ACL whenever an API key is present, regardless of
+  // requireApiKey setting. Previously this was gated on requireApiKey=true,
+  // meaning local mode (requireApiKey=false) had no model ACL at all.
+  if (apiKey) {
     try {
       const keyObj = await getApiKeyByKey(apiKey);
       if (keyObj && Array.isArray(keyObj.allowedModels) && keyObj.allowedModels.length > 0) {
@@ -318,6 +355,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    const pxpipeDir = getPxpipeDir();
     const attemptStart = Date.now();
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
@@ -337,6 +375,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       cavemanLevel: chatSettings.cavemanLevel || "full",
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
+      pxpipeEnabled: !!chatSettings.pxpipeEnabled,
+      pxpipeDir: pxpipeDir,
+      pxpipeMinChars: chatSettings.pxpipeMinChars || 25000,
+      pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs || 5000,
       semanticCacheEnabled: !!chatSettings.semanticCacheEnabled,
       semanticCacheThreshold: typeof chatSettings.semanticCacheThreshold === "number" ? chatSettings.semanticCacheThreshold : 0.85,
       providerThinking,
@@ -352,6 +394,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
       }
+    }).catch(err => {
+      // Probe-slot leak fix: if handleChatCore throws (abort, network error),
+      // release the claimed half-open probe slot so the breaker doesn't get stuck.
+      releaseBreakerProbe(provider);
+      throw err;
     });
 
     if (result.success) {

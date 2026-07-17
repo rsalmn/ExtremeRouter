@@ -126,6 +126,10 @@ import p123 from "./zenmux-free.js";
 import p124 from "./api-airforce.js";
 import p125 from "./openvecta.js";
 import p126 from "./freebuff-web.js";
+import p127 from "./perplexity-agent.js";
+import p128 from "./featherless.js";
+import p129 from "./moonshot.js";
+import p130 from "./qwencloud.js";
 
 export default [
   p0,
@@ -254,5 +258,9 @@ export default [
   p123,
   p124,
   p125,
-  p126
+  p126,
+  p127,
+  p128,
+  p129,
+  p130
 ];

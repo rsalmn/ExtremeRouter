@@ -101,6 +101,9 @@ export function isCircuitOpen(provider, settings = {}) {
     if (b.halfOpenCalls >= cfg.halfOpenMaxCalls) {
       return true; // probe in flight → block additional traffic
     }
+    // H1 FIX: Atomically claim a probe slot so concurrent requests can't all
+    // pass the half-open gate simultaneously (synchronous = no interleaving).
+    b.halfOpenCalls++;
   }
 
   return false; // CLOSED or HALF_OPEN with capacity → allow
@@ -160,6 +163,20 @@ export function recordBreakerFailure(provider, status, settings = {}) {
     }
   }
   // If already OPEN, ignore (we don't count failures while blocked).
+}
+
+/**
+ * Release a claimed half-open probe slot without recording success or failure.
+ * Use this when a request that passed the half-open gate is aborted or throws
+ * an unhandled exception before reaching recordBreakerSuccess/Failure.
+ * Without this, the slot leaks and the breaker sticks at capacity indefinitely.
+ */
+export function releaseBreakerProbe(provider) {
+  const b = monitors.get(provider);
+  if (!b || b.state !== "halfOpen") return;
+  if (b.halfOpenCalls > 0) {
+    b.halfOpenCalls--;
+  }
 }
 
 /**

@@ -13,7 +13,7 @@ import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
 // SSE error patterns inside 200-OK body that should trigger retry as if 503
-const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
+const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error", "capacity", "rate_limit_exceeded", "insufficient_quota"];
 const CODEX_SSE_PEEK_BYTES = 4096;
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false

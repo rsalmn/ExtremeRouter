@@ -1084,6 +1084,37 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Pollinations gateway is unreachable" };
       }
+      case "qwencloud": {
+        let cookie = connection.apiKey.replace(/^Cookie:\s*/i, "").trim();
+        if (cookie.startsWith("cookie=")) cookie = cookie.slice(7).trim();
+        const res = await fetchWithConnectionProxy("https://home.qwencloud.com/tool/user/info.json", {
+          method: "GET",
+          headers: { Cookie: cookie, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36" },
+        }, effectiveProxy);
+        if (res.status === 401 || res.status === 403) return { valid: false, error: "Invalid or expired qwencloud.com session cookie" };
+        if (!res.ok) return { valid: false, error: `QwenCloud returned ${res.status}` };
+        const data = await res.json().catch(() => null);
+        const valid = !!(data?.data?.secToken);
+        return { valid, error: valid ? null : "Session accepted but no secToken — cookie may be expired" };
+      }
+      case "moonshot": {
+        const res = await fetchWithConnectionProxy("https://api.moonshot.ai/v1/models", {
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid Moonshot API key" };
+      }
+      case "featherless": {
+        const res = await fetchWithConnectionProxy("https://api.featherless.ai/v1/models?per_page=1", {
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid Featherless API key" };
+      }
+      case "perplexity-agent": {
+        const res = await fetchWithConnectionProxy("https://api.perplexity.ai/v1/models", {
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid Perplexity API key" };
+      }
       case "openvecta": {
         // OpenAI-compatible gateway — validate via /v1/models with Bearer.
         const res = await fetchWithConnectionProxy("https://openvecta.com/v1/models", {

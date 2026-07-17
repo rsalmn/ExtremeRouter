@@ -1,4 +1,6 @@
 // Build a base64 data URI from mime + base64 payload
+import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
+
 export function encodeDataUri(mimeType, base64) {
   return `data:${mimeType};base64,${base64}`;
 }
@@ -81,6 +83,8 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
 
   let url;
   try { url = new URL(imageUrl); } catch { return null; }
+  // C4 FIX: SSRF guard — block internal/private IPs before DNS resolution
+  try { assertPublicUrl(imageUrl); } catch { return null; }
   const pinnedIps = await resolvePinnedIps(url.hostname);
   if (!pinnedIps) return null;
 

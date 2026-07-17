@@ -212,6 +212,15 @@ export function stripThinkingSuffix(model) {
  */
 export function resolveKiroModel(model) {
   let upstream = model;
+  // FIX: Strip thinking-level suffix like "(high)" that was added by the
+  // per-model thinking picker. parseSuffix in thinkingUnified strips this for
+  // applyThinking, but resolveKiroModel also needs to strip it for the upstream
+  // modelId, otherwise "(high)" leaks into the Kiro CodeWhisperer modelId and
+  // gets rejected.
+  const parenIdx = upstream.lastIndexOf("(");
+  if (parenIdx > 0 && upstream.endsWith(")")) {
+    upstream = upstream.slice(0, parenIdx).trim();
+  }
   let agentic = false;
   let thinking = false;
   if (isAgenticModel(upstream)) {

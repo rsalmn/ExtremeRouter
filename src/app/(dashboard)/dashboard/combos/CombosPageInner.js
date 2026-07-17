@@ -86,7 +86,8 @@ export default function CombosPageInner() {
         setConfirmState(null);
         try {
           const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
-          if (res.ok) setCombos(combos.filter((c) => c.id !== id));
+          // H5 FIX: Use functional update to avoid stale closure on `combos`
+          if (res.ok) setCombos(prev => prev.filter((c) => c.id !== id));
         } catch (error) { console.log("Error deleting combo:", error); }
       },
     });

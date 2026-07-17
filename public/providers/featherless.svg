@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0D0D1A"/>
+  <!-- Feather symbol representing "Featherless" (lightweight models) -->
+  <path d="M20 48 Q20 30 36 18 Q44 12 48 16 Q44 20 40 26 Q36 32 34 38 Q32 44 28 46 Q24 48 20 48 Z" fill="#FF6B35"/>
+  <path d="M20 48 L14 56" stroke="#FF6B35" stroke-width="3" stroke-linecap="round"/>
+  <line x1="24" y1="44" x2="38" y2="30" stroke="#0D0D1A" stroke-width="1.5" opacity="0.4"/>
+  <line x1="28" y1="40" x2="42" y2="26" stroke="#0D0D1A" stroke-width="1.5" opacity="0.4"/>
+</svg>

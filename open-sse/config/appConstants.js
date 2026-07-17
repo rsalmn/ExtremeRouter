@@ -59,7 +59,7 @@ export function getPlatformEnum() {
 }
 
 export function getPlatformUserAgent() {
-  return `antigravity/1.104.0 ${platform()}/${arch()}`;
+  return `antigravity/2.1.1 ${platform()}/${arch()}`;
 }
 
 export const CLIENT_METADATA = {
@@ -129,7 +129,7 @@ export const AG_DEFAULT_TOOLS = new Set([
 
 // Antigravity chat/stream headers
 export const ANTIGRAVITY_HEADERS = {
-  "User-Agent": `antigravity/1.107.0 ${platform()}/${arch()}`
+  "User-Agent": `antigravity/2.1.1 ${platform()}/${arch()}`
 };
 
 // Cloud Code Assist API

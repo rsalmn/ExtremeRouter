@@ -305,6 +305,12 @@ function wrapInCloudCodeEnvelope(model, geminiCLI, credentials = null, isAntigra
   } else {
     // Keep safetySettings for Gemini CLI
     envelope.request.safetySettings = geminiCLI.safetySettings;
+    // Also emit validated toolConfig for Gemini CLI when tools are present
+    if (geminiCLI.tools?.length > 0) {
+      envelope.request.toolConfig = {
+        functionCallingConfig: { mode: "VALIDATED" }
+      };
+    }
   }
 
   return envelope;

@@ -1,6 +1,7 @@
 import { Readable } from "stream";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
+import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
@@ -300,6 +301,8 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   // Vercel relay: forward request via relay headers
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
   if (vercelRelayUrl) {
+    // C1 FIX: SSRF guard — validate relay URL is not internal/private
+    try { assertPublicUrl(vercelRelayUrl); } catch { throw new Error("Blocked relay URL: internal/private host"); }
     const parsed = new URL(targetUrl);
     const relayHeaders = {
       ...options.headers,
@@ -310,6 +313,10 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
+  // C1 FIX: SSRF guard — validate connection proxy URL is not internal/private
+  if (connectionProxyUrl) {
+    try { assertPublicUrl(connectionProxyUrl); } catch { throw new Error("Blocked proxy URL: internal/private host"); }
+  }
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
 

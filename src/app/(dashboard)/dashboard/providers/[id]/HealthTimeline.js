@@ -29,11 +29,18 @@ export default function HealthTimeline({ providerId, hours = 24 }) {
     };
 
     fetchTimeline();
-    const interval = setInterval(fetchTimeline, POLL_MS);
+    let interval = setInterval(fetchTimeline, POLL_MS);
 
     const onVisibility = () => {
-      if (document.hidden) clearInterval(interval);
-      else { fetchTimeline(); setInterval(fetchTimeline, POLL_MS); }
+      if (document.hidden) {
+        clearInterval(interval);
+      } else {
+        // H3 FIX: Clear any existing interval before creating a new one to
+        // prevent orphaned intervals that leak on each tab refocus.
+        clearInterval(interval);
+        fetchTimeline();
+        interval = setInterval(fetchTimeline, POLL_MS);
+      }
     };
     document.addEventListener("visibilitychange", onVisibility);
 

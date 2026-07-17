@@ -24,6 +24,7 @@ import ZenmuxPlanSelector from "./ZenmuxPlanSelector";
 import HealthTimeline from "./HealthTimeline";
 import FreeBuffProfile from "./FreeBuffProfile";
 import V0Profile from "./V0Profile";
+import QwenCloudProfile from "./QwenCloudProfile";
 import { useNewBadge } from "@/shared/hooks/useNewBadge";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
@@ -1286,6 +1287,17 @@ export default function ProviderDetailPage() {
                   {providerInfo.notice?.apiKeyUrl ? "Get API Key" : "Sign up / Learn more"}
                 </a>
               )}
+              {providerId === "moonshot" && (
+                <a
+                  href="https://www.kimi.com/activities/viral-referral/share?scenario=invite&from=share_poster&invitation_code=BPGXZR"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 rounded-full bg-primary/12 px-3 py-1 text-xs font-semibold text-primary ring-1 ring-primary/20 hover:bg-primary/20 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-sm">celebration</span>
+                  Get KIMI K3 For Free
+                </a>
+              )}
             </div>
             <p className="text-text-muted">
               {connections.length} connection{connections.length === 1 ? "" : "s"}
@@ -1393,6 +1405,9 @@ export default function ProviderDetailPage() {
               )}
               {providerId === "v0-vercel-web" && connections.length > 0 && (
                 <V0Profile connectionId={connections[0].id} />
+              )}
+              {providerId === "qwencloud" && connections.length > 0 && (
+                <QwenCloudProfile connectionId={connections[0].id} />
               )}
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">

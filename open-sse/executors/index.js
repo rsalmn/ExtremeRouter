@@ -30,6 +30,8 @@ import { BlackboxWebExecutor } from "./blackbox-web.js";
 import { ZenmuxFreeExecutor } from "./zenmux-free.js";
 import { ApiAirforceExecutor } from "./api-airforce.js";
 import { FreeBuffWebExecutor } from "./freebuff-web.js";
+import { PerplexityAgentExecutor } from "./perplexity-agent.js";
+import { QwenCloudExecutor } from "./qwencloud.js";
 import { T3ChatWebExecutor } from "./t3-web.js";
 import { DuckDuckGoWebExecutor } from "./duckduckgo-web.js";
 import { VeniceWebExecutor } from "./venice-web.js";
@@ -101,6 +103,8 @@ const executors = {
   "zenmux-free": new ZenmuxFreeExecutor(),
   "api-airforce": new ApiAirforceExecutor(),
   "freebuff-web": new FreeBuffWebExecutor(),
+  "perplexity-agent": new PerplexityAgentExecutor(),
+  "qwencloud": new QwenCloudExecutor(),
   lmarena: new LMArenaExecutor(),
   puter: new PuterExecutor(),
   pollinations: new PollinationsExecutor(),
@@ -167,6 +171,8 @@ export { HuggingChatExecutor } from "./huggingchat.js";
 export { ZenmuxFreeExecutor } from "./zenmux-free.js";
 export { ApiAirforceExecutor } from "./api-airforce.js";
 export { FreeBuffWebExecutor } from "./freebuff-web.js";
+export { PerplexityAgentExecutor } from "./perplexity-agent.js";
+export { QwenCloudExecutor } from "./qwencloud.js";
 export { LMArenaExecutor } from "./lmarena.js";
 export { PuterExecutor } from "./puter.js";
 export { PollinationsExecutor } from "./pollinations.js";
