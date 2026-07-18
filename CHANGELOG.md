@@ -1,3 +1,37 @@
+# v0.7.2 (2026-07-18)
+
+## Features
+- **Token Saver Full Coverage**: "Tokens Saved" overview counter now includes all 6 saver mechanisms (previously only RTK + Headroom + Pxpipe). Semantic Cache HITs, Caveman, and Ponytail now contribute to the lifetime total.
+- **Token Saver Breakdown UI**: the "Tokens Saved" KPI card on the Overview dashboard is now expandable, showing per-mechanism attribution (RTK / Headroom / Pxpipe / Cache / Caveman / Ponytail) as chips with icons + values, plus total semantic cache hits served.
+- **Semantic Cache token accounting**: cache HITs now record the full avoided token cost (prompt + completion parsed from the cached body) into the lifetime counter + per-mechanism breakdown. Previously cache HITs contributed zero because the early return bypassed `saveUsageStats` entirely.
+- **Caveman / Ponytail savings estimation**: output-side savers now report estimated savings via a per-(model+provider) moving-average baseline (window 50, warm-up ~10 requests). Savings split 50/50 when both are active.
+- **Per-mechanism lifetime counters**: 6 separate DB counters (`tokensSavedLifetime.{rtk,headroom,pxpipe,cache,caveman,ponytail}`) + `semanticCacheHitsLifetime` for accurate attribution.
+- **xAI OAuth quota tracking**: xAI now reports billing + subscription quota in the Quota Tracker dashboard (`features.usage` + `transport.usage` wiring, new `getXaiUsage` handler).
+- **Kiro GPT-5.6 model catalog**: added 12 GPT-5.6 entries (Sol/Terra/Luna × base/thinking/agentic/thinking-agentic) with 272k context, 3 new MITM slots, `thinkingMaxEffort` for gpt-5.6-sol.
+- **Kiro 402 credit exhaustion detection**: `parseError()` override distinguishes confirmed credit exhaustion (ServiceQuotaExceededException + MONTHLY_REQUEST_COUNT) from ambiguous 402s, with best-effort reset-time lookup via GetUsageLimits and 24h fallback cap.
+- **Auto-rotate proxy strategy**: no-auth providers can rotate across all active proxy pools (round-robin/random) via `pickProxyPoolId`.
+- **devin.svg provider icon asset**: added missing Devin brand icon.
+
+## Fixes
+- **Kiro ListAvailableModels 403 "bearer token invalid"**: `fetchKiroCatalogRaw` sent a bare bearer token without the auth-method disambiguating header that AWS CodeWhisperer requires. Now branches on `authMethod` (api_key → `tokentype: API_KEY`, external_idp → `TokenType: EXTERNAL_IDP`) matching the working chat executor. Retry gate expanded from 401-only to `401 || 403`.
+- **Provider icon 404s (svg/png mismatch)**: 34 SVG-only providers (chatgpt-web, kimi-web, freebuff-web, openvecta, qwencloud, etc.) were requested as `.png` across 13 call sites, all 404ing.
+- **Provider icon 404s (compatible UUID)**: `openai-compatible-chat-{UUID}.png` URLs could never match a static asset; now resolve to `oai-cc.png` / `oai-r.png` / `anthropic-m.png` via prefix detection.
+- **ComboTemplatesTab comboStrategies overwrite**: applying a template wiped every other combo's strategy via shallow-merge PATCH (data loss). Now fetches current strategies and merges the new entry.
+- **freebuff-web `total_tokens: 0`**: broke usage accounting on non-streaming responses. Now equals `prompt_tokens + completion_tokens`.
+- **Devin validate probe (2 sites)**: accepted 5xx as a valid key. Now 2xx→valid, 401/403→invalid, else→unknown.
+- **v0-vercel-web & freebuff-web "Hello" fallback**: sent a literal "Hello" upstream on empty messages (masked client bugs + unintended cost). Now returns 400.
+- **thinkingUnified dead duplicate branch**: unreachable second `level` branch bypassed the M8 whitelist validation.
+- **sseToJsonHandler standard branch dropped `savedTokens`**: pre-existing bug — savings never recorded on the standard SSE→JSON path.
+- **usageRepo `meta` column overwrite**: pre-existing bug — `retryCount` was clobbered whenever `savedTokens` was set.
+- **freebuff-profile unused import**: `updateProviderConnection` imported but never used (lint/build risk).
+- **`.zcode/plans` artifact committed**: AI session planning file tracked in git; now gitignored.
+
+## Improvements
+- **Shared `providerIcon.js` helper**: single source of truth for icon resolution. Removes the byte-identical `SVG_ICON_IDS` duplication from 2 files and consolidates 14 hardcoded call sites (addresses "Reduce duplication" tech debt).
+- **OverviewKpiCards label**: `"Via RTK + Headroom"` → `"All token savers"` (accurate — Pxpipe + 3 new savers now included).
+- **TokenSaverStatus badges**: added missing Pxpipe + Semantic Cache badges.
+- **`completionBaseline.js` + `outputSaver.js`**: reusable modules for output-side saver estimation, preventing logic duplication across 3 response handlers.
+
 # v0.7.0 (2026-07-16)
 
 ## Features

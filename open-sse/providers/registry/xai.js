@@ -29,7 +29,12 @@ export default {
     clientId: "b1a00492-073a-47ea-816f-4c329264a828",
     tokenUrl: "https://auth.x.ai/oauth2/token",
     refreshUrl: "https://auth.x.ai/oauth2/token",
+    usage: {
+      billingUrl: "https://api.x.ai/v1/billing?format=credits",
+      subscriptionUrl: "https://api.x.ai/v1/user?include=subscription",
+    },
   },
+  features: { usage: true },
   models: [
     // Reasoning LLMs (Responses API + Chat Completions)
     { id: "grok-4.5", name: "Grok 4.5" },

@@ -9,6 +9,7 @@ import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
+import { augmentWithOutputSaverSavings } from "../../rtk/outputSaver.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -198,7 +199,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog, savedTokens, retryCount }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog, savedTokens, savedTokensByMechanism, cavemanActive, ponytailActive, retryCount }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -248,7 +249,19 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   const usage = extractUsageFromResponse(responseBody);
   const totalLatency = Date.now() - requestStartTime;
   appendLog({ tokens: usage, status: "200 OK" });
-  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, latency: { ttft: totalLatency, total: totalLatency }, savedTokens, retryCount });
+  const augmented = augmentWithOutputSaverSavings({
+    usage, provider, model,
+    savedTokens, savedTokensByMechanism,
+    cavemanActive, ponytailActive,
+  });
+  saveUsageStats({
+    provider, model, tokens: usage, connectionId, apiKey,
+    endpoint: clientRawRequest?.endpoint,
+    latency: { ttft: totalLatency, total: totalLatency },
+    savedTokens: augmented.savedTokens,
+    savedTokensByMechanism: augmented.savedTokensByMechanism,
+    retryCount,
+  });
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)

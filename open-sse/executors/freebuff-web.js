@@ -69,7 +69,15 @@ export class FreeBuffWebExecutor extends BaseExecutor {
       ? lastUser.content
       : Array.isArray(lastUser?.content)
         ? lastUser.content.filter((c) => c.type === "text").map((c) => c.text).join("\n")
-        : "Hello";
+        : "";
+    if (!userText.trim()) {
+      // Reject empty requests instead of silently sending "Hello" upstream,
+      // which would mask client bugs and trigger unintended requests.
+      return {
+        response: errorResponse(400, "FreeBuff: request has no user message content."),
+        url: CHAT_URL, headers: {}, transformedBody: body,
+      };
+    }
     const sysText = sysMessages.length > 0
       ? (typeof sysMessages[0].content === "string" ? sysMessages[0].content : "")
       : null;
@@ -165,12 +173,14 @@ export class FreeBuffWebExecutor extends BaseExecutor {
       const { content, reasoning } = await collectText(upstream.body, signal);
       const msg = { role: "assistant", content };
       if (reasoning) msg.reasoning_content = reasoning;
+      const promptTokens = Math.ceil(fullText.length / 4);
+      const completionTokens = Math.ceil(content.length / 4);
       return {
         response: new Response(
           JSON.stringify({
             id: cid, object: "chat.completion", created, model: modelId,
             choices: [{ index: 0, message: msg, finish_reason: "stop" }],
-            usage: { prompt_tokens: Math.ceil(fullText.length / 4), completion_tokens: Math.ceil(content.length / 4), total_tokens: 0 },
+            usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens },
           }),
           { headers: { "Content-Type": "application/json" } },
         ),

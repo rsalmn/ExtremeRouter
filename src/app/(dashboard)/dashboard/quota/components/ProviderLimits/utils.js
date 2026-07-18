@@ -451,6 +451,36 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "xai": {
+        // xAI (Grok) OAuth — credits from billing API + plan from subscription
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remaining: quota.remaining,
+              remainingPercentage: quota.remainingPercentage,
+              resetAt: quota.resetAt || null,
+              recurring: false,
+              unlimited: quota.unlimited === true,
+            });
+          });
+        }
+        // If only a plan was detected (no numeric credits), show plan as info
+        if (normalizedQuotas.length === 0 && data.plan) {
+          normalizedQuotas.push({
+            name: `${data.plan} (subscription)`,
+            used: 0,
+            total: 0,
+            remainingPercentage: null,
+            resetAt: null,
+            recurring: false,
+            unlimited: true,
+          });
+        }
+        break;
+      }
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {

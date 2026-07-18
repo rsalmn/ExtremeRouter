@@ -13,9 +13,21 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    const [requestsRaw, savedRaw, stats, settings, connections] = await Promise.all([
+    const [
+      requestsRaw, savedRaw,
+      rtkSaved, headroomSaved, pxpipeSaved, cacheSaved, cavemanSaved, ponytailSaved,
+      cacheHitsRaw,
+      stats, settings, connections,
+    ] = await Promise.all([
       getMeta("totalRequestsLifetime", "0"),
       getMeta("tokensSavedLifetime", "0"),
+      getMeta("tokensSavedLifetime.rtk", "0"),
+      getMeta("tokensSavedLifetime.headroom", "0"),
+      getMeta("tokensSavedLifetime.pxpipe", "0"),
+      getMeta("tokensSavedLifetime.cache", "0"),
+      getMeta("tokensSavedLifetime.caveman", "0"),
+      getMeta("tokensSavedLifetime.ponytail", "0"),
+      getMeta("semanticCacheHitsLifetime", "0"),
       getUsageStats("all"),
       getSettings(),
       getProviderConnections(),
@@ -65,11 +77,25 @@ export async function GET() {
     return NextResponse.json({
       totalRequestsLifetime: parseInt(requestsRaw, 10) || 0,
       tokensSavedLifetime: parseInt(savedRaw, 10) || 0,
+      // Per-mechanism lifetime breakdown so the Overview dashboard can attribute
+      // savings to each saver. Falls back to 0 when no counter exists yet
+      // (pre-feature installs only have the legacy aggregate `tokensSavedLifetime`).
+      tokensSavedByMechanism: {
+        rtk: parseInt(rtkSaved, 10) || 0,
+        headroom: parseInt(headroomSaved, 10) || 0,
+        pxpipe: parseInt(pxpipeSaved, 10) || 0,
+        cache: parseInt(cacheSaved, 10) || 0,
+        caveman: parseInt(cavemanSaved, 10) || 0,
+        ponytail: parseInt(ponytailSaved, 10) || 0,
+      },
+      semanticCacheHits: parseInt(cacheHitsRaw, 10) || 0,
       totalCachedTokens: stats.totalCachedTokens || 0,
       freeProviders,
       tokenSaverSettings: {
         rtkEnabled: settings.rtkEnabled !== false,
         headroomEnabled: !!settings.headroomEnabled,
+        pxpipeEnabled: !!settings.pxpipeEnabled,
+        semanticCacheEnabled: !!settings.semanticCacheEnabled,
         cavemanEnabled: !!settings.cavemanEnabled,
         ponytailEnabled: !!settings.ponytailEnabled,
       },

@@ -84,3 +84,6 @@ graphify-out/*
 
 # Reports / scratch
 UI-AUDIT-REPORT.md
+
+# ZCode AI agent session artifacts (ephemeral — do not commit)
+.zcode/

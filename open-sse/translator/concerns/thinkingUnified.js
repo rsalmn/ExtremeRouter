@@ -129,7 +129,6 @@ function toLevel(cfg) {
     // Validate against known levels — reject unknown client-injected values.
     return VALID_LEVELS.has(cfg.level) ? cfg.level : null;
   }
-  if (cfg.mode === "level") return cfg.level;
   if (cfg.mode === "budget") return budgetToLevel(cfg.budget) || "medium";
   if (cfg.mode === "auto") return "auto";
   return null;

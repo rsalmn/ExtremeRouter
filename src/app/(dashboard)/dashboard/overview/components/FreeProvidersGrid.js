@@ -4,15 +4,7 @@ import PropTypes from "prop-types";
 import Link from "next/link";
 import { EmptyState } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
-
-const SVG_ICON_IDS = new Set([
-  "windsurf", "trae", "cody", "kimchi",
-  "chatglm-cn", "blackbox-web", "puter", "adapta-web", "deepseek-web",
-  "chatgpt-web", "doubao-web", "gemini-web", "copilot-web", "muse-spark-web",
-  "duckduckgo-web", "venice-web", "t3-web", "lmarena", "veoaifree-web",
-  "claude-web", "pollinations", "poe-web", "v0-vercel-web", "qwen-web",
-  "kimi-web", "huggingchat", "api-airforce", "openvecta", "freebuff-web", "zenmux-free", "perplexity-agent", "featherless", "moonshot", "qwencloud",
-]);
+import { getProviderIconPath } from "@/shared/utils/providerIcon";
 
 const fmt = (n) => {
   const num = Number(n || 0);
@@ -20,10 +12,6 @@ const fmt = (n) => {
   if (num >= 1e3) return `${(num / 1e3).toFixed(1)}K`;
   return num.toLocaleString();
 };
-
-function getIconPath(providerId) {
-  return `/providers/${providerId}.${SVG_ICON_IDS.has(providerId) ? "svg" : "png"}`;
-}
 
 export default function FreeProvidersGrid({ providers }) {
   if (!providers || providers.length === 0) {
@@ -52,7 +40,7 @@ export default function FreeProvidersGrid({ providers }) {
               style={{ backgroundColor: bg }}
             >
               <ProviderIcon
-                src={getIconPath(p.id)}
+                src={getProviderIconPath(p.id)}
                 alt={p.name}
                 size={24}
                 className="object-contain rounded max-w-[24px] max-h-[24px]"

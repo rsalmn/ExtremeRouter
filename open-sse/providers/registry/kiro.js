@@ -58,6 +58,20 @@ export default {
     { id: "claude-sonnet-5-thinking-agentic", name: "Claude Sonnet 5 (Thinking + Agentic)", contextLength: 1000000, maxOutputTokens: 128000 },
     { id: "claude-sonnet-4.5-thinking-agentic", name: "Claude Sonnet 4.5 (Thinking + Agentic)", contextLength: 1000000, maxOutputTokens: 128000 },
     { id: "claude-haiku-4.5-thinking-agentic", name: "Claude Haiku 4.5 (Thinking + Agentic)", contextLength: 200000, maxOutputTokens: 128000 },
+    // GPT-5.6 family — 272k context window (observed July 2026)
+    { id: "gpt-5.6-sol", name: "GPT-5.6 Sol", contextLength: 272000, maxOutputTokens: 128000 },
+    { id: "gpt-5.6-terra", name: "GPT-5.6 Terra", contextLength: 272000, maxOutputTokens: 128000 },
+    { id: "gpt-5.6-luna", name: "GPT-5.6 Luna", contextLength: 272000, maxOutputTokens: 128000 },
+    // GPT-5.6 synthetic variants
+    { id: "gpt-5.6-sol-thinking", name: "GPT-5.6 Sol (Thinking)", contextLength: 272000, maxOutputTokens: 128000 },
+    { id: "gpt-5.6-terra-thinking", name: "GPT-5.6 Terra (Thinking)", contextLength: 272000, maxOutputTokens: 128000 },
+    { id: "gpt-5.6-luna-thinking", name: "GPT-5.6 Luna (Thinking)", contextLength: 272000, maxOutputTokens: 128000 },
+    { id: "gpt-5.6-sol-agentic", name: "GPT-5.6 Sol (Agentic)", contextLength: 272000, maxOutputTokens: 128000 },
+    { id: "gpt-5.6-terra-agentic", name: "GPT-5.6 Terra (Agentic)", contextLength: 272000, maxOutputTokens: 128000 },
+    { id: "gpt-5.6-luna-agentic", name: "GPT-5.6 Luna (Agentic)", contextLength: 272000, maxOutputTokens: 128000 },
+    { id: "gpt-5.6-sol-thinking-agentic", name: "GPT-5.6 Sol (Thinking + Agentic)", contextLength: 272000, maxOutputTokens: 128000 },
+    { id: "gpt-5.6-terra-thinking-agentic", name: "GPT-5.6 Terra (Thinking + Agentic)", contextLength: 272000, maxOutputTokens: 128000 },
+    { id: "gpt-5.6-luna-thinking-agentic", name: "GPT-5.6 Luna (Thinking + Agentic)", contextLength: 272000, maxOutputTokens: 128000 },
   ],
   oauth: {
     ssoOidcEndpoint: "https://oidc.us-east-1.amazonaws.com",

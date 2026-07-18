@@ -8,6 +8,7 @@ import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamH
 import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
+import { augmentWithOutputSaverSavings } from "../../rtk/outputSaver.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -108,7 +109,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 /**
  * Build onStreamComplete callback for streaming usage tracking.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, savedTokens, retryCount }) {
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, savedTokens, savedTokensByMechanism, cavemanActive, ponytailActive, retryCount }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
   const onStreamComplete = (contentObj, usage, ttftAt) => {
@@ -132,7 +133,18 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
 
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, latency, savedTokens, retryCount, label: "STREAM USAGE" });
+    const augmented = augmentWithOutputSaverSavings({
+      usage, provider, model,
+      savedTokens, savedTokensByMechanism,
+      cavemanActive, ponytailActive,
+    });
+    saveUsageStats({
+      provider, model, tokens: usage, connectionId, apiKey,
+      endpoint: clientRawRequest?.endpoint, latency,
+      savedTokens: augmented.savedTokens,
+      savedTokensByMechanism: augmented.savedTokensByMechanism,
+      retryCount, label: "STREAM USAGE",
+    });
   };
 
   return { onStreamComplete, streamDetailId };

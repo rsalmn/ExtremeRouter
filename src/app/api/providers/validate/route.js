@@ -1062,8 +1062,18 @@ export async function POST(request) {
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
               body: JSON.stringify({ prompt: "ping", idempotency_id: "validation-" + Date.now() }),
             });
-            isValid = res.status !== 401 && res.status !== 403;
-            if (!isValid) error = "Invalid Devin API key";
+            // 2xx = valid, 401/403 = invalid key, anything else (4xx/5xx) = unknown.
+            // Do NOT treat 5xx as valid — that certifies keys when the service is
+            // failing or the endpoint shape changes.
+            if (res.status >= 200 && res.status < 300) {
+              isValid = true;
+            } else if (res.status === 401 || res.status === 403) {
+              isValid = false;
+              error = "Invalid Devin API key";
+            } else {
+              isValid = false;
+              error = `Devin returned status ${res.status} — unable to verify key`;
+            }
           } catch (err) {
             isValid = false;
             error = err.message || "Failed to validate Devin key";

@@ -6,16 +6,7 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import { Badge, Toggle } from "@/shared/components";
 import { cn } from "@/shared/utils/cn";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
-
-// SVG_ICON_IDS — providers with vector SVG brand icons
-const SVG_ICON_IDS = new Set([
-  "windsurf", "trae", "cody", "kimchi",
-  "chatglm-cn", "blackbox-web", "puter", "adapta-web", "deepseek-web",
-  "chatgpt-web", "doubao-web", "gemini-web", "copilot-web", "muse-spark-web",
-  "duckduckgo-web", "venice-web", "t3-web", "lmarena", "veoaifree-web",
-  "claude-web", "pollinations", "poe-web", "v0-vercel-web", "qwen-web",
-  "kimi-web", "huggingchat", "api-airforce", "openvecta", "freebuff-web", "zenmux-free", "perplexity-agent", "featherless", "moonshot", "qwencloud",
-]);
+import { getProviderIconPath } from "@/shared/utils/providerIcon";
 
 /**
  * Unified provider card — handles ALL provider variants:
@@ -35,11 +26,7 @@ export default function ProviderCardV2({
   const isAnthropicCompatible = providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX);
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
 
-  const getIconPath = () => {
-    if (isCompatible) return provider.apiType === "responses" ? "/providers/oai-r.png" : "/providers/oai-cc.png";
-    if (isAnthropicCompatible) return "/providers/anthropic-m.png";
-    return `/providers/${provider.id}.${SVG_ICON_IDS.has(provider.id) ? "svg" : "png"}`;
-  };
+  const iconPath = getProviderIconPath(providerId, provider.apiType);
 
   return (
     <div className="group relative flex items-center justify-between gap-3 rounded-brand border border-border-subtle bg-panel px-3 py-2.5 shadow-[var(--shadow-soft)] transition-all hover:border-primary/35 hover:bg-panel-elev hover:shadow-[var(--shadow-warm)]">
@@ -49,7 +36,7 @@ export default function ProviderCardV2({
           style={{ backgroundColor: `${provider.color?.length > 7 ? provider.color : provider.color + "15"}` }}
         >
           <ProviderIcon
-            src={getIconPath()}
+            src={iconPath}
             alt={provider.name}
             size={30}
             className="object-contain rounded-lg max-w-[30px] max-h-[30px]"

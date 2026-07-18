@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Card, Button, Input, Toggle, ModelSelectModal, PageHeader } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { AI_PROVIDERS, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
+import { getProviderIconPath } from "@/shared/utils/providerIcon";
 
 // Parse "providerId/model" or just "providerId" → { providerId, model }
 function parseModelEntry(entry) {
@@ -293,7 +294,7 @@ export default function ComboDetailPage() {
                 <div key={`${entry}-${idx}`} className="flex items-center gap-3 p-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02]">
                   <span className="text-xs text-text-muted w-5 text-center">{idx + 1}</span>
                   <ProviderIcon
-                    src={`/providers/${providerId}.png`}
+                    src={getProviderIconPath(providerId)}
                     alt={p?.name || providerId}
                     size={24}
                     className="object-contain rounded shrink-0"

@@ -171,7 +171,15 @@ export class V0VercelWebExecutor extends BaseExecutor {
       ? lastUser.content
       : Array.isArray(lastUser?.content)
         ? lastUser.content.filter((c) => c.type === "text").map((c) => c.text).join("\n")
-        : "Hello";
+        : "";
+    if (!userText.trim()) {
+      // Reject empty requests instead of silently sending "Hello" upstream,
+      // which would mask client bugs and trigger unintended requests/cost.
+      return {
+        response: errorResponse(400, "v0: request has no user message content."),
+        url: CHAT_URL, headers: {}, transformedBody: body,
+      };
+    }
     const sysText = sysMessages.length > 0
       ? (typeof sysMessages[0].content === "string" ? sysMessages[0].content : "")
       : null;

@@ -28,10 +28,19 @@ export default function ComboTemplatesTab({ combos, connections, onApply }) {
         alert(err.error || "Failed to create combo from template");
         return;
       }
+      // IMPORTANT: /api/settings does a shallow merge of top-level keys, so
+      // PATCHing { comboStrategies: {...} } would REPLACE the whole object and
+      // wipe every other combo's strategy. Fetch current strategies first and
+      // merge the new entry in.
+      const cur = await fetch("/api/settings").then((r) => r.json()).catch(() => ({}));
+      const merged = {
+        ...(cur?.comboStrategies || {}),
+        [template.name]: { fallbackStrategy: template.strategy },
+      };
       await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ comboStrategies: { [template.name]: { fallbackStrategy: template.strategy } } }),
+        body: JSON.stringify({ comboStrategies: merged }),
       });
       if (onApply) onApply();
     } catch (err) {
