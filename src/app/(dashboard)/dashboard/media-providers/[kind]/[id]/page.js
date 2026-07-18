@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { Card, Badge, Button, AddCustomEmbeddingModal, NoAuthProxyCard, ProviderInfoCard, PageHeader } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, isCustomEmbeddingProvider } from "@/shared/constants/providers";
+import { getProviderIconPath } from "@/shared/utils/providerIcon";
 import ConnectionsCard from "@/app/(dashboard)/dashboard/providers/components/ConnectionsCard";
 import ModelsCard from "@/app/(dashboard)/dashboard/providers/components/ModelsCard";
 import { KIND_EXAMPLE_CONFIG } from "./components/exampleShared";
@@ -76,7 +77,7 @@ export default function MediaProviderDetailPage() {
         iconNode={
           <div className="flex size-12 items-center justify-center rounded-brand ring-1 ring-border-subtle" style={{ backgroundColor: `${provider.color}15` }}>
             <ProviderIcon
-              src={`/providers/${provider.id}.png`}
+              src={getProviderIconPath(provider.id)}
               alt={provider.name}
               size={36}
               className="object-contain rounded max-w-[36px] max-h-[36px]"

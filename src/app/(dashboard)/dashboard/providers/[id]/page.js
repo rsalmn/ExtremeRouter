@@ -12,6 +12,7 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { getProviderIconPath } from "@/shared/utils/providerIcon";
 import ModelRow from "./ModelRow";
 import CompatibleModelsSection from "./CompatibleModelsSection";
 import ConnectionRow from "./ConnectionRow";
@@ -1230,16 +1231,8 @@ export default function ProviderDetailPage() {
     );
   }
 
-  // Determine icon path: OpenAI Compatible providers use specialized icons
-  const getHeaderIconPath = () => {
-    if (isOpenAICompatible && providerInfo.apiType) {
-      return providerInfo.apiType === "responses" ? "/providers/oai-r.png" : "/providers/oai-cc.png";
-    }
-    if (isAnthropicCompatible) {
-      return "/providers/anthropic-m.png";
-    }
-    return `/providers/${providerInfo.id}.png`;
-  };
+  // Resolve the provider icon asset path (handles compatible prefixes + SVG/PNG).
+  const headerIconPath = getProviderIconPath(providerInfo.id, providerInfo.apiType);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -1263,7 +1256,7 @@ export default function ProviderDetailPage() {
               </span>
             ) : (
               <Image
-                src={getHeaderIconPath()}
+                src={headerIconPath}
                 alt={providerInfo.name}
                 width={48}
                 height={48}

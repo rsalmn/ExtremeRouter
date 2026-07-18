@@ -164,10 +164,26 @@ async function fetchKiroCatalogRaw(credentials, signal) {
   if (profileArn) params.set("profileArn", profileArn);
   const url = `https://q.${region}.amazonaws.com/ListAvailableModels?${params.toString()}`;
 
-  const headers = {
-    ...buildKiroFingerprintHeaders(credentials),
-    "Authorization": `Bearer ${credentials?.accessToken || ""}`
-  };
+  // Auth-method-aware header construction — mirrors executors/kiro.js buildHeaders().
+  // CodeWhisperer requires a disambiguating header on top of the bearer token:
+  //   - api_key auth  → `tokentype: API_KEY` (the key lives in accessToken/apiKey)
+  //   - external_idp  → `TokenType: EXTERNAL_IDP` (Entra/enterprise OAuth)
+  // Without these, ListAvailableModels returns 403 "bearer token invalid" even
+  // though the token value itself is valid. The chat executor already does this;
+  // this call site previously sent a bare bearer and 403'd for api_key/external_idp.
+  const authMethod = credentials?.providerSpecificData?.authMethod;
+  const isApiKey = authMethod === "api_key";
+  const isExternalIdp = authMethod === "external_idp";
+  const apiKey = credentials?.apiKey || (isApiKey ? credentials?.accessToken : null);
+
+  const headers = { ...buildKiroFingerprintHeaders(credentials) };
+  if (isApiKey && apiKey) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["tokentype"] = "API_KEY";
+  } else if (credentials?.accessToken) {
+    headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+    if (isExternalIdp) headers["TokenType"] = "EXTERNAL_IDP";
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort("timeout"), FETCH_TIMEOUT_MS);
@@ -252,8 +268,13 @@ export async function resolveKiroModels(credentials, options = {}) {
   try {
     raw = await fetchKiroCatalogRaw(credentials, options.signal);
   } catch (err) {
-    if (err && err.status === 401 && credentials.refreshToken) {
-      options.log?.info?.("KIRO_MODELS", "Got 401 from Kiro; refreshing token");
+    // Retry on 401 (expired token) OR 403. CodeWhisperer returns 403 for a
+    // token presented without the right type header, but also for genuinely
+    // expired tokens on some auth methods (e.g. idc) — so a refresh attempt
+    // on 403 is worthwhile before giving up. A refresh that doesn't help just
+    // fails through to the static catalog fallback.
+    if (err && (err.status === 401 || err.status === 403) && credentials.refreshToken) {
+      options.log?.info?.("KIRO_MODELS", `Got ${err.status} from Kiro; refreshing token`);
       const refreshed = await refreshKiroToken(
         credentials.refreshToken,
         credentials.providerSpecificData,

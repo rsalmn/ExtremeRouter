@@ -1054,9 +1054,16 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
             },
             body: JSON.stringify({ prompt: "ping", idempotency_id: "validation-" + Date.now() }),
           }, effectiveProxy);
-          // 401/403 = bad key, 200/201 = valid, other = unknown
-          const valid = res.status !== 401 && res.status !== 403;
-          return { valid, error: valid ? null : "Invalid Devin API key" };
+          // 2xx = valid, 401/403 = invalid key, anything else = unknown.
+          // Do NOT treat 5xx as valid — that falsely marks connections healthy
+          // when the service is failing or the endpoint shape changes.
+          if (res.status >= 200 && res.status < 300) {
+            return { valid: true, error: null };
+          }
+          if (res.status === 401 || res.status === 403) {
+            return { valid: false, error: "Invalid Devin API key" };
+          }
+          return { valid: false, error: `Devin returned status ${res.status} — unable to verify key` };
         } catch (err) {
           return { valid: false, error: err.message };
         }

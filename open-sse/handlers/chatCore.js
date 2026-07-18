@@ -15,7 +15,7 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
-import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDetail.js";
+import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./chatCore/requestDetail.js";
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
@@ -61,6 +61,31 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     const cached = cacheLookup(provider, model, body, threshold, cacheIdentity);
     if (cached) {
       log?.info?.("CACHE", `semantic cache ${cached.exact ? "HIT" : "near-hit"} (${(cached.similarity * 100).toFixed(0)}% similarity) — returning cached response`);
+
+      // Token-saver accounting: a cache HIT avoids the entire upstream call, so
+      // 100% of that request's tokens are saved. The cached body carries the
+      // upstream provider's `usage` block — parse it (fail-open if unreadable)
+      // so the savings land in the lifetime counter and per-mechanism breakdown.
+      // The response returned to the client is untouched (we clone to read it).
+      try {
+        const forUsage = cached.response.clone ? cached.response.clone() : cached.response;
+        const usageBody = await forUsage.json();
+        const u = extractUsageFromResponse(usageBody);
+        if (u && (u.prompt_tokens > 0 || u.completion_tokens > 0)) {
+          const cacheTokensSaved = (u.prompt_tokens || 0) + (u.completion_tokens || 0);
+          saveUsageStats({
+            provider, model, tokens: u,
+            connectionId, apiKey,
+            endpoint: clientRawRequest?.endpoint || null,
+            latency: { ttft: 0, total: Date.now() - requestStartTime },
+            savedTokens: cacheTokensSaved,
+            savedTokensByMechanism: { cache: cacheTokensSaved },
+            fromCache: true,
+            label: "CACHE",
+          });
+        }
+      } catch { /* non-fatal: return the cached response without savings */ }
+
       const cachedResponse = cached.response.clone ? cached.response.clone() : cached.response;
       return { response: cachedResponse, url: "(cache)", headers: {}, transformedBody: body, fromCache: true, cacheSimilarity: cached.similarity };
     }
@@ -245,11 +270,21 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   // Compute total tokens saved by RTK + Headroom + Pxpipe for this request.
+  // Caveman/Ponytail savings are estimated later in the response handlers
+  // (once completion_tokens are known) from a per-model moving-average baseline.
   const rtkBytesSaved = rtkStats ? (rtkStats.bytesBefore || 0) - (rtkStats.bytesAfter || 0) : 0;
   const rtkTokensSaved = Math.round(rtkBytesSaved / 4);
   const headroomTokensSaved = headroomStats?.tokens_saved || 0;
   const pxpipeTokensSaved = pxpipeStats?.tokensSaved || 0;
   const savedTokens = rtkTokensSaved + headroomTokensSaved + pxpipeTokensSaved;
+
+  // Per-mechanism breakdown for the prompt-side savers (cache handled separately
+  // on the HIT path). Caveman/Ponytail are appended by the response handlers.
+  const savedTokensByMechanism = {};
+  if (rtkTokensSaved > 0) savedTokensByMechanism.rtk = rtkTokensSaved;
+  if (headroomTokensSaved > 0) savedTokensByMechanism.headroom = headroomTokensSaved;
+  if (pxpipeTokensSaved > 0) savedTokensByMechanism.pxpipe = pxpipeTokensSaved;
+
 
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
@@ -407,7 +442,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, savedTokens, retryCount: executorRetryCount };
+  const sharedCtx = {
+    provider, model, body, stream, translatedBody, finalBody, requestStartTime,
+    connectionId, apiKey, clientRawRequest, onRequestSuccess, savedTokens,
+    savedTokensByMechanism,
+    cavemanActive: !!cavemanEnabled, ponytailActive: !!ponytailEnabled,
+    retryCount: executorRetryCount,
+  };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

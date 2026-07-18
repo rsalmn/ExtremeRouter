@@ -110,6 +110,8 @@ export class KiroExecutor extends BaseExecutor {
    * classify the status, and trigger account fallback/cooldown.
    */
   async execute(args) {
+    // Store credentials for parseError's quota lookup follow-up
+    this._lastCredentials = args?.credentials || {};
     const result = await super.execute(args);
     if (result?.response?.ok) {
       result.response = this.transformEventStreamToSSE(result.response, args.model);
@@ -519,6 +521,91 @@ export class KiroExecutor extends BaseExecutor {
       return result;
     } catch (error) {
       log?.error?.("TOKEN", `Kiro refresh error: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Parse a Kiro/CodeWhisperer error response.
+   *
+   * For 402s, distinguishes confirmed monthly credit exhaustion
+   * (ServiceQuotaExceededException + MONTHLY_REQUEST_COUNT) from ambiguous
+   * 402s (bad payment, suspended account). On confirmed exhaustion, makes a
+   * best-effort follow-up call to GetUsageLimits to extract the real reset
+   * timestamp. Falls back to a 24h daily-probe default if the lookup fails.
+   *
+   * Returns { status, message, resetsAtMs? } — resetsAtMs is only set for
+   * confirmed exhaustion; ambiguous 402s return without it (preserving the
+   * old 2-minute cooldown behavior).
+   */
+  async parseError(response, bodyText) {
+    const status = response.status;
+
+    if (status !== 402) {
+      return { status, message: bodyText || `HTTP ${status}` };
+    }
+
+    // Try to parse the Kiro error shape
+    let parsed;
+    try { parsed = JSON.parse(bodyText); } catch { /* non-JSON body */ }
+
+    // Detect confirmed exhaustion: ServiceQuotaExceededException + MONTHLY_REQUEST_COUNT
+    // Match both nested (cause.name + cause.reason) and flattened (name + reason) shapes.
+    const cause = parsed?.cause || parsed?.error?.cause || {};
+    const topName = parsed?.name || parsed?.error?.name || "";
+    const topReason = parsed?.reason || parsed?.error?.reason || cause.reason || "";
+
+    const isQuotaExceeded =
+      (cause.name === "ServiceQuotaExceededException" || topName === "ServiceQuotaExceededException") &&
+      topReason === "MONTHLY_REQUEST_COUNT";
+
+    if (!isQuotaExceeded) {
+      // Ambiguous 402 — no resetsAtMs, old 2-min cooldown preserved
+      return { status: 402, message: bodyText || "Payment required" };
+    }
+
+    // Confirmed exhaustion — try to get the real reset timestamp from the quota API
+    let resetsAtMs = null;
+    try {
+      resetsAtMs = await this._lookupKiroResetTime();
+    } catch { /* non-fatal */ }
+
+    if (resetsAtMs && resetsAtMs > Date.now()) {
+      return { status: 402, message: "Kiro monthly credit limit reached", resetsAtMs };
+    }
+
+    // Quota lookup failed or nothing depleted — safe 24h daily-probe default
+    const dailyProbe = Date.now() + 24 * 60 * 60 * 1000;
+    return { status: 402, message: "Kiro monthly credit limit reached (reset time unavailable, probing daily)", resetsAtMs: dailyProbe };
+  }
+
+  /**
+   * Best-effort follow-up call to GetUsageLimits to find the earliest
+   * reset timestamp among depleted quota buckets. 8s timeout.
+   * Returns null on any failure.
+   */
+  async _lookupKiroResetTime() {
+    try {
+      // Import the quota fetcher — it knows the right endpoints and auth
+      const { getKiroUsage } = await import("../services/usage/kiro.js");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const usage = await Promise.race([
+        getKiroUsage(this._lastCredentials || {}),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("quota lookup timeout")), 8000)),
+      ]);
+      clearTimeout(timeout);
+
+      // Find earliest reset among depleted buckets
+      let earliest = null;
+      for (const [, info] of Object.entries(usage?.quota || {})) {
+        if (info?.resetAt && info.remaining !== undefined && info.remaining <= 0) {
+          const ts = new Date(info.resetAt).getTime();
+          if (!earliest || ts < earliest) earliest = ts;
+        }
+      }
+      return earliest;
+    } catch {
       return null;
     }
   }

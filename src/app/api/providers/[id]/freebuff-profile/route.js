@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { getProviderConnectionById } from "@/lib/localDb";
 
 // GET /api/providers/[id]/freebuff-profile
 //

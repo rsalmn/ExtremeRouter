@@ -6,6 +6,8 @@ import { Badge } from "@/shared/components";
 const SAVERS = [
   { key: "rtkEnabled", name: "RTK Token Saver", icon: "compress" },
   { key: "headroomEnabled", name: "Headroom", icon: "cloud_compress" },
+  { key: "pxpipeEnabled", name: "Pxpipe", icon: "image_search" },
+  { key: "semanticCacheEnabled", name: "Semantic Cache", icon: "cached" },
   { key: "cavemanEnabled", name: "Caveman Mode", icon: "cottage" },
   { key: "ponytailEnabled", name: "Ponytail", icon: "cut" },
 ];

@@ -98,6 +98,20 @@ function aggregateEntryToDay(day, entry) {
   addToCounter(day.byEndpoint, epKey, { ...vals, meta: { endpoint, rawModel: entry.model, provider: entry.provider } });
 }
 
+// Build the per-request `meta` JSON column from the entry. Combines all metadata
+// (savedTokens, per-mechanism breakdown, cache-hit flag, retryCount) instead of
+// overwriting — previous code dropped retryCount whenever savedTokens was set.
+function buildUsageMeta(entry) {
+  const meta = {};
+  if (entry.savedTokens) meta.savedTokens = entry.savedTokens;
+  if (entry.savedTokensByMechanism && typeof entry.savedTokensByMechanism === "object") {
+    meta.savings = entry.savedTokensByMechanism;
+  }
+  if (entry.fromCache) meta.fromCache = true;
+  if (entry.retryCount) meta.retryCount = entry.retryCount;
+  return meta;
+}
+
 function pushToRing(entry) {
   recentRing.items.push(entry);
   if (recentRing.items.length > RING_CAP) {
@@ -286,7 +300,7 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson(entry.savedTokens ? { savedTokens: entry.savedTokens } : {}),
+          stringifyJson(tokens), stringifyJson(buildUsageMeta(entry)),
           Math.max(0, Math.round(entry.latency?.ttft || 0)),
           Math.max(0, Math.round(entry.latency?.total || 0)),
         ]
@@ -306,11 +320,33 @@ export async function saveRequestUsage(entry) {
       const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
       db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
 
-      // Token saved lifetime counter (RTK + Headroom savings)
+      // Token saved lifetime counter — aggregates ALL saver mechanisms.
       if (entry.savedTokens > 0) {
         const savedCur = db.get(`SELECT value FROM _meta WHERE key = 'tokensSavedLifetime'`);
         const savedNext = (savedCur ? parseInt(savedCur.value, 10) : 0) + entry.savedTokens;
         db.run(`INSERT INTO _meta(key, value) VALUES('tokensSavedLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(savedNext)]);
+      }
+
+      // Per-mechanism lifetime breakdown (RTK, Headroom, Pxpipe, Cache, Caveman, Ponytail).
+      // Lets the Overview dashboard attribute savings to each saver. Keys use the
+      // `tokensSavedLifetime.<mech>` namespace inside the generic _meta table.
+      if (entry.savedTokensByMechanism && typeof entry.savedTokensByMechanism === "object") {
+        for (const [mech, val] of Object.entries(entry.savedTokensByMechanism)) {
+          const n = Number(val);
+          if (!Number.isFinite(n) || n <= 0) continue;
+          const metaKey = `tokensSavedLifetime.${mech}`;
+          const m = db.get(`SELECT value FROM _meta WHERE key = ?`, [metaKey]);
+          const mNext = (m ? parseInt(m.value, 10) : 0) + n;
+          db.run(`INSERT INTO _meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [metaKey, String(mNext)]);
+        }
+      }
+
+      // Semantic Cache hit counter — separate from savedTokens because a cache hit
+      // also short-circuits the upstream call entirely.
+      if (entry.fromCache) {
+        const hCur = db.get(`SELECT value FROM _meta WHERE key = 'semanticCacheHitsLifetime'`);
+        const hNext = (hCur ? parseInt(hCur.value, 10) : 0) + 1;
+        db.run(`INSERT INTO _meta(key, value) VALUES('semanticCacheHitsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(hNext)]);
       }
       inserted = true;
     });

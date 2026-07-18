@@ -37,4 +37,54 @@ describe("Kiro static provider models", () => {
       "claude-sonnet-5-thinking-agentic",
     ]));
   });
+
+  it("includes GPT-5.6 Sol/Terra/Luna base models", () => {
+    const ids = (PROVIDER_MODELS.kr || []).map((model) => model.id);
+    expect(ids).toEqual(expect.arrayContaining([
+      "gpt-5.6-sol",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+    ]));
+  });
+
+  it("includes GPT-5.6 synthetic variants (thinking, agentic, thinking-agentic)", () => {
+    const ids = (PROVIDER_MODELS.kr || []).map((model) => model.id);
+    expect(ids).toEqual(expect.arrayContaining([
+      "gpt-5.6-sol-thinking",
+      "gpt-5.6-sol-agentic",
+      "gpt-5.6-sol-thinking-agentic",
+      "gpt-5.6-terra-thinking",
+      "gpt-5.6-terra-agentic",
+      "gpt-5.6-terra-thinking-agentic",
+      "gpt-5.6-luna-thinking",
+      "gpt-5.6-luna-agentic",
+      "gpt-5.6-luna-thinking-agentic",
+    ]));
+  });
+
+  it("GPT-5.6 models have 272k context window", () => {
+    const models = PROVIDER_MODELS.kr || [];
+    const sol = models.find((m) => m.id === "gpt-5.6-sol");
+    const terra = models.find((m) => m.id === "gpt-5.6-terra");
+    const luna = models.find((m) => m.id === "gpt-5.6-luna");
+    expect(sol?.contextLength).toBe(272000);
+    expect(terra?.contextLength).toBe(272000);
+    expect(luna?.contextLength).toBe(272000);
+  });
+});
+
+describe("Kiro GPT-5.6 MITM slots", () => {
+  const kiro = MITM_TOOLS.kiro;
+
+  it("offers mappable slots for all GPT-5.6 models", () => {
+    const sol = kiro.defaultModels.find((m) => m.id === "gpt-5.6-sol");
+    const terra = kiro.defaultModels.find((m) => m.id === "gpt-5.6-terra");
+    const luna = kiro.defaultModels.find((m) => m.id === "gpt-5.6-luna");
+    expect(sol).toBeTruthy();
+    expect(sol.alias).toBe("gpt-5.6-sol");
+    expect(terra).toBeTruthy();
+    expect(terra.alias).toBe("gpt-5.6-terra");
+    expect(luna).toBeTruthy();
+    expect(luna.alias).toBe("gpt-5.6-luna");
+  });
 });

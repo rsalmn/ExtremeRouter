@@ -10,6 +10,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { getProviderIconPath } from "@/shared/utils/providerIcon";
 
 // Force-stop FE animation if a provider stays active longer than this
 const FE_ACTIVE_TIMEOUT_MS = 60000;
@@ -21,7 +22,7 @@ function getProviderConfig(providerId) {
 
 // Use local provider images from /public/providers/
 function getProviderImageUrl(providerId) {
-  return `/providers/${providerId}.png`;
+  return getProviderIconPath(providerId);
 }
 
 // Custom provider node - rectangle with image + name
