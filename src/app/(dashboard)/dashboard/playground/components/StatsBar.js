@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { getPricingForModel, calculateCostFromTokens, formatCost } from "open-sse/providers/pricing.js";
+import { getPricingForModel, calculateCostFromTokens, formatCost } from "@/shared/utils/pricing";
 
 function fmt(n) {
   if (n == null) return "—";

@@ -3,6 +3,7 @@
 import PropTypes from "prop-types";
 import { useEffect, useRef } from "react";
 import { EmptyState } from "@/shared/components";
+import MessageContent from "./MessageContent";
 
 export default function ChatArea({ messages, onSend, streaming }) {
   const scrollRef = useRef(null);
@@ -58,12 +59,35 @@ function MessageBubble({ msg }) {
             {msg.model}
           </div>
         )}
-        <p className="whitespace-pre-wrap break-words">
-          {msg.content}
+        {msg.reasoning && (
+          <details className="mb-1.5 rounded bg-black/5 px-2 py-1 dark:bg-white/5">
+            <summary className="cursor-pointer text-[10px] font-medium text-text-muted">
+              Reasoning
+            </summary>
+            <p className="mt-1 whitespace-pre-wrap break-words text-xs italic text-text-muted">
+              {msg.reasoning}
+            </p>
+          </details>
+        )}
+        {isUser && msg.attachments && msg.attachments.length > 0 && (
+          <div className="mb-1.5 flex flex-wrap gap-1.5">
+            {msg.attachments.map((att) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={att.id}
+                src={att.dataUrl}
+                alt={att.name}
+                className="h-20 w-20 rounded-lg border border-white/20 object-cover"
+              />
+            ))}
+          </div>
+        )}
+        <div className="break-words">
+          <MessageContent content={msg.content} role={msg.role} error={isError} />
           {msg.streaming && (
             <span className="ml-0.5 inline-block size-3 animate-pulse rounded-full bg-primary/50 align-middle" />
           )}
-        </p>
+        </div>
       </div>
     </div>
   );
@@ -75,9 +99,11 @@ ChatArea.propTypes = {
       id: PropTypes.string,
       role: PropTypes.string,
       content: PropTypes.string,
+      reasoning: PropTypes.string,
       model: PropTypes.string,
       streaming: PropTypes.bool,
       error: PropTypes.bool,
+      attachments: PropTypes.array,
     })
   ),
   onSend: PropTypes.func,

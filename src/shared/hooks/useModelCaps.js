@@ -29,13 +29,17 @@ export function useModelCaps() {
   }, []);
 
   // Resolve caps from a "provider/model" string or a bare model id.
+  // Defensive: `key` may arrive as a non-string (e.g. when a model-picker slot
+  // is still empty or a modal returned a non-string value). Coerce to string
+  // so `.includes()`/`.slice()` don't throw "key.includes is not a function".
   const getCaps = (key) => {
     if (!key) return null;
-    if (byFull[key]) return byFull[key];
-    const bare = key.includes("/") ? key.slice(key.indexOf("/") + 1) : key;
+    const k = typeof key === "string" ? key : String(key);
+    if (byFull[k]) return byFull[k];
+    const bare = k.includes("/") ? k.slice(k.indexOf("/") + 1) : k;
     if (byId[bare]) return byId[bare];
     // Fallback: compute caps for dynamic models (passthrough/custom/suggested) not in static list
-    const provider = key.includes("/") ? key.slice(0, key.indexOf("/")) : null;
+    const provider = k.includes("/") ? k.slice(0, k.indexOf("/")) : null;
     const c = getCapabilitiesForModel(provider, bare);
     return { vision: c.vision, search: c.search, reasoning: c.reasoning };
   };

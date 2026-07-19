@@ -22,9 +22,6 @@ import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/strea
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
 
-// H1 FIX: Per-connection debounce Set for cookie auto-refresh. Prevents concurrent
-// requests from racing on the same connection's cookie update — only one refresh
-// in-flight per connection at a time.
 const cookieRefreshInProgress = new Set();
 import { injectCaveman } from "../rtk/caveman.js";
 import { compressWithPxpipe, formatPxpipeLog, formatPxpipeSizeLog, isPxpipePhantomSavings } from "../rtk/pxpipe.js";
@@ -62,11 +59,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (cached) {
       log?.info?.("CACHE", `semantic cache ${cached.exact ? "HIT" : "near-hit"} (${(cached.similarity * 100).toFixed(0)}% similarity) — returning cached response`);
 
-      // Token-saver accounting: a cache HIT avoids the entire upstream call, so
-      // 100% of that request's tokens are saved. The cached body carries the
-      // upstream provider's `usage` block — parse it (fail-open if unreadable)
-      // so the savings land in the lifetime counter and per-mechanism breakdown.
-      // The response returned to the client is untouched (we clone to read it).
       try {
         const forUsage = cached.response.clone ? cached.response.clone() : cached.response;
         const usageBody = await forUsage.json();
@@ -93,20 +85,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const modelTargetFormat = getModelTargetFormat(alias, model);
-  // Multi-endpoint providers: pick transport matching sourceFormat → zero translation
   const runtimeTransport = resolveTransport(provider, sourceFormat);
   const targetFormat = modelTargetFormat || runtimeTransport?.format || getTargetFormat(provider);
   if (runtimeTransport && credentials) credentials.runtimeTransport = runtimeTransport;
   const stripList = getModelStrip(alias, model);
-  // Strip thinking suffix (e.g. "model(high)") before upstream lookup so the
-  // parenthesized level doesn't leak into the model id sent to the provider.
-  // applyThinking() in the translator still receives the original `model`
-  // (with suffix) and parses it independently to apply the reasoning override.
   const { cleanModel: cleanModelForUpstream } = parseSuffix(model);
   const upstreamModel = getModelUpstreamId(alias, cleanModelForUpstream);
 
-  // Inject provider-level thinking config override (only if client hasn't set)
-  // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
   if (providerThinking?.mode && providerThinking.mode !== "auto") {
     const mode = providerThinking.mode;
     if (mode === "on" && !body.thinking) {
@@ -345,15 +330,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     finalBody = result.transformedBody;
     executorRetryCount = result.retryCount || 0;
 
-    // Auto-refresh cookies: some cookie providers (e.g. freebuff-web via NextAuth.js)
-    // rotate the session token via Set-Cookie on every request. Capture the new
-    // token and persist it back to the connection so the user doesn't need to
-    // re-submit cookies.
-    //
-    // H1 FIX: Per-connection debounce via a module-level Map to prevent concurrent
-    // requests from racing on the same connection's cookie. If a refresh is already
-    // in-flight for this connection, skip — the in-flight one will persist the
-    // latest cookie, and the next request will pick it up from the DB.
     if (result.refreshedCookie && credentials?.connectionId) {
       const connId = credentials.connectionId;
       if (!cookieRefreshInProgress.has(connId)) {

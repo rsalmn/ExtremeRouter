@@ -81,7 +81,7 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
+  transformRequest(model, body, stream, credentials) {
     const transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
@@ -90,6 +90,18 @@ export class DefaultExecutor extends BaseExecutor {
         delete transformed.client_metadata;
       }
       stripUnsupportedParams(this.provider, model, transformed);
+
+      // Inject stream_options for streaming requests — some OpenAI-compatible
+      // providers (e.g. Cline/GLM) REJECT `stream: true` unless `stream_options`
+      // is present alongside, returning 500 "'stream' and 'stream_options' must
+      // be set together". Adding `{ include_usage: true }` also gives us usage
+      // stats in the terminal chunk for accurate token accounting. Mirrors the
+      // pattern in iflow.js/qwen.js. Providers that reject this field are
+      // handled via stripUnsupportedParams rules (e.g. Codex's own executor
+      // deletes it explicitly, so they aren't affected here).
+      if (stream && transformed.messages && !transformed.stream_options) {
+        transformed.stream_options = { include_usage: true };
+      }
     }
 
     return injectReasoningContent({ provider: this.provider, model, body: transformed });
