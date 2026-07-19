@@ -7,11 +7,30 @@ import ParameterPanel from "./components/ParameterPanel";
 import StatsBar from "./components/StatsBar";
 import HistoryPanel from "./components/HistoryPanel";
 import ChatArea from "./components/ChatArea";
+import MessageContent from "./components/MessageContent";
+import { usePlaygroundStream } from "./usePlaygroundStream";
 
 const STORAGE_KEY = "extremerouter.playground.sessions";
 
 function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+// Strip provider internals from upstream error messages before display.
+// Removes URLs, request_ids, bearer/API-key fragments, and collapses long
+// embedded JSON so the bubble stays readable and doesn't leak internals.
+function sanitizeProviderError(message) {
+  let s = typeof message === "string" ? message : String(message ?? "");
+  // Strip http(s) URLs.
+  s = s.replace(/https?:\/\/[^\s"'<>]+/g, "[url]");
+  // Strip common token shapes (bearer tokens, AWS sig, long hex/base64 blobs).
+  s = s.replace(/(Bearer\s+)[A-Za-z0-9._\-]{16,}/gi, "$1[token]");
+  s = s.replace(/(signature=)[A-Za-z0-9%+/=]{16,}/gi, "$1[sig]");
+  // Collapse embedded JSON objects (common in 4xx/5xx provider bodies).
+  s = s.replace(/\{[\s\S]{80,}\}/g, "[provider json]");
+  // Cap total length to keep the bubble sane.
+  if (s.length > 300) s = s.slice(0, 297) + "...";
+  return s.trim();
 }
 
 function loadSessions() {
@@ -28,20 +47,23 @@ function saveSessions(sessions) {
 export default function PlaygroundClient() {
   const [loading, setLoading] = useState(true);
   const [models, setModels] = useState([]);
+  // Active provider connections + model aliases — fed to ModelSelectModal so the
+  // picker shows the user's actually-connected providers + custom models, not the
+  // flat /v1/models list. Mirrors the pattern used by cli-tools ToolDetailClient.
+  const [activeProviders, setActiveProviders] = useState([]);
+  const [modelAliases, setModelAliases] = useState({});
   const [sessions, setSessions] = useState([]);
   const [currentSession, setCurrentSession] = useState(null);
 
   // Chat state
   const [messages, setMessages] = useState([]);
-  const [streaming, setStreaming] = useState(false);
-  const [abortControllers, setAbortControllers] = useState({});
+  const [compareResults, setCompareResults] = useState({});
 
   // Mode: "single" or "compare"
   const [mode, setMode] = useState("single");
 
   // Selected models (1 for single, 2-4 for compare)
   const [selectedModels, setSelectedModels] = useState([""]);
-  const [compareResults, setCompareResults] = useState({});
 
   // Parameters
   const [params, setParams] = useState({
@@ -49,12 +71,92 @@ export default function PlaygroundClient() {
     temperature: 0.7,
     maxTokens: 4096,
     topP: 1,
+    frequencyPenalty: 0,
+    presencePenalty: 0,
+    topK: null,
+    seed: null,
+    reasoningEffort: "",
   });
 
   // Stats
   const [stats, setStats] = useState({});
-  const abortRef = useRef({});
   const apiKeyRef = useRef(null);
+
+  // Per-stream context: { id → { mode, assistantId, modelId, startTime } }
+  // Lets the shared hook callbacks know which message/result slot to update.
+  const streamContextRef = useRef({});
+
+  // ── Stream callbacks (stable — read context from ref) ──────────────────────
+  //
+  // These use functional state updates so concurrent compare-mode streams never
+  // race on a shared mutable object. Each stream owns its `id` slot.
+
+  const handleDelta = useCallback((id, parsed) => {
+    const ctx = streamContextRef.current[id];
+    if (!ctx) return;
+    const append = (cur, field, val) => (val ? (cur || "") + val : cur);
+    if (ctx.mode === "single") {
+      setMessages(prev => prev.map(m => m.id !== ctx.assistantId ? m : {
+        ...m,
+        content: append(m.content, "content", parsed.content),
+        reasoning: append(m.reasoning, "reasoning", parsed.reasoning),
+      }));
+    } else {
+      setCompareResults(prev => {
+        const cur = prev[id] || { content: "", reasoning: "", streaming: true, error: null };
+        return { ...prev, [id]: {
+          ...cur,
+          content: append(cur.content, "content", parsed.content),
+          reasoning: append(cur.reasoning, "reasoning", parsed.reasoning),
+        }};
+      });
+    }
+  }, []);
+
+  const handleComplete = useCallback((id, { usage }) => {
+    const ctx = streamContextRef.current[id];
+    if (!ctx) return;
+    if (ctx.mode === "single") {
+      setMessages(prev => prev.map(m => m.id === ctx.assistantId ? { ...m, streaming: false } : m));
+      setStats({
+        model: ctx.modelId,
+        inputTokens: usage?.prompt_tokens || 0,
+        outputTokens: usage?.completion_tokens || 0,
+        latencyMs: Date.now() - ctx.startTime,
+      });
+    } else {
+      setCompareResults(prev => ({
+        ...prev,
+        [id]: { ...prev[id], streaming: false, usage },
+      }));
+    }
+    delete streamContextRef.current[id];
+  }, []);
+
+  const handleError = useCallback((id, message) => {
+    const ctx = streamContextRef.current[id];
+    if (!ctx) return;
+    // #10: strip provider internals from error messages before showing — upstream
+    // errors can leak URLs, auth fragments, request_ids, and verbose JSON that
+    // shouldn't surface in the chat bubble.
+    const cleaned = sanitizeProviderError(message);
+    if (ctx.mode === "single") {
+      setMessages(prev => prev.map(m => m.id === ctx.assistantId
+        ? { ...m, content: `❌ Error: ${cleaned}`, streaming: false, error: true } : m));
+    } else {
+      setCompareResults(prev => ({
+        ...prev,
+        [id]: { ...prev[id], content: `❌ ${cleaned}`, streaming: false, error: true },
+      }));
+    }
+    delete streamContextRef.current[id];
+  }, []);
+
+  const { streamChat, abortAll, streaming } = usePlaygroundStream({
+    onDelta: handleDelta,
+    onComplete: handleComplete,
+    onError: handleError,
+  });
 
   // ── Init ──────────────────────────────────────────────────────────────────
 
@@ -69,10 +171,22 @@ export default function PlaygroundClient() {
         const activeKey = (keysData.keys || keysData || []).find?.((k) => k.isActive !== false);
         if (activeKey?.key) apiKeyRef.current = activeKey.key;
       } catch {}
+      // Fetch active connections + model aliases in parallel. These drive the
+      // ModelSelectModal so the picker reflects the user's real provider setup
+      // (connected providers + custom models + disabled-model filtering) instead
+      // of the flat /v1/models catalog.
       try {
-        const res = await fetch("/api/v1/models");
-        const data = await res.json();
-        const list = (data.data || []).map((m) => ({
+        const [providersRes, aliasesRes, modelsRes] = await Promise.all([
+          fetch("/api/providers"),
+          fetch("/api/models/alias"),
+          fetch("/api/v1/models"),
+        ]);
+        const providersData = await providersRes.json();
+        setActiveProviders((providersData.connections || []).filter((c) => c.isActive !== false));
+        const aliasesData = await aliasesRes.json();
+        setModelAliases(aliasesData.aliases || {});
+        const modelsData = await modelsRes.json();
+        const list = (modelsData.data || []).map((m) => ({
           id: m.id,
           name: m.id,
           provider: m.owned_by || m.id.split("/")[0],
@@ -87,7 +201,6 @@ export default function PlaygroundClient() {
   // ── Session management ────────────────────────────────────────────────────
 
   const newSession = useCallback(() => {
-    // Save current if has messages
     if (messages.length > 0 && currentSession) {
       updateSession(currentSession, messages);
     }
@@ -151,198 +264,112 @@ export default function PlaygroundClient() {
 
   // ── Chat send ─────────────────────────────────────────────────────────────
 
-  const sendMessage = useCallback(async (text) => {
-    if (!text.trim() || streaming) return;
+  // #19: Cap conversation length to avoid unbounded memory + localStorage growth.
+  // Keeps the last MAX_MESSAGES turns; older context is dropped from the request
+  // body (the user can still see them in the rendered history above).
+  const MAX_MESSAGES = 50;
 
-    const userMsg = { role: "user", content: text, id: createId() };
-    const baseMessages = [...messages, userMsg];
-    if (params.systemPrompt) {
-      baseMessages.unshift({ role: "system", content: params.systemPrompt });
-    }
+  const buildRequestBody = useCallback((text, attachments = []) => {
+    // Build OpenAI multimodal content when images are attached:
+    //   content: [{ type: "text", text }, { type: "image_url", image_url: { url: dataUrl } }]
+    // Plain text stays a string (most efficient + universally accepted).
+    const hasImages = attachments.length > 0;
+    const userContent = hasImages
+      ? [
+          { type: "text", text },
+          ...attachments.map((att) => ({
+            type: "image_url",
+            image_url: { url: att.dataUrl },
+          })),
+        ]
+      : text;
+    // For display we keep a plain-text version (images rendered separately
+    // via the attachments preview that already showed before send).
+    const userMsg = { role: "user", content: userContent, id: createId(),
+      // Display-only metadata so the bubble can render a thumbnail.
+      displayText: text, displayAttachments: hasImages ? attachments : undefined };
+
+    // Cap history: keep system prompt + last MAX_MESSAGES turns.
+    const history = [...messages];
+    if (params.systemPrompt) history.unshift({ role: "system", content: params.systemPrompt });
+    const trimmed = history.slice(-MAX_MESSAGES);
+    const baseMessages = [...trimmed, userMsg];
+
+    // Build optional params — only include fields the user actually set, so we
+    // don't push defaults/nulls upstream (some providers reject `seed: null`).
+    const requestParams = {
+      temperature: params.temperature,
+      max_tokens: params.maxTokens,
+      top_p: params.topP,
+    };
+    if (params.frequencyPenalty) requestParams.frequency_penalty = params.frequencyPenalty;
+    if (params.presencePenalty) requestParams.presence_penalty = params.presencePenalty;
+    if (params.topK) requestParams.top_k = params.topK;
+    if (params.seed != null) requestParams.seed = params.seed;
+    if (params.reasoningEffort) requestParams.reasoning_effort = params.reasoningEffort;
+    return { userMsg, baseMessages, requestParams };
+  }, [messages, params]);
+
+  const sendMessage = useCallback(async (text, attachments = []) => {
+    if ((!text.trim() && attachments.length === 0) || streaming) return;
+
+    const { userMsg, baseMessages, requestParams } = buildRequestBody(text, attachments);
+    const apiKey = apiKeyRef.current;
+    const startTime = Date.now();
 
     if (mode === "single") {
       const modelId = selectedModels[0];
       if (!modelId) return;
 
       const assistantId = createId();
-      const assistantMsg = { role: "assistant", content: "", id: assistantId, model: modelId, streaming: true };
-      setMessages([...baseMessages.filter(m => m.role !== "system"), assistantMsg]);
-      setStreaming(true);
-      const startTime = Date.now();
+      const assistantMsg = { role: "assistant", content: "", reasoning: "", id: assistantId, model: modelId, streaming: true };
+      // Display messages: strip system prompt (sent in body only) + normalize
+      // user content to plain text for the bubble (attachments rendered via
+      // the `attachments` field, not inlined as a content array).
+      const displayMsgs = baseMessages
+        .filter((m) => m.role !== "system")
+        .map((m) => m.role === "user"
+          ? { ...m, content: m.displayText ?? m.content, attachments: m.displayAttachments }
+          : m);
+      setMessages([...displayMsgs, assistantMsg]);
 
-      const controller = new AbortController();
-      abortRef.current = { single: controller };
-
-      try {
-        const headers = { "Content-Type": "application/json", Accept: "text/event-stream" };
-        if (apiKeyRef.current) headers["Authorization"] = `Bearer ${apiKeyRef.current}`;
-        const res = await fetch("/api/v1/chat/completions", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            model: modelId,
-            messages: baseMessages,
-            stream: true,
-            temperature: params.temperature,
-            max_tokens: params.maxTokens,
-            top_p: params.topP,
-          }),
-          signal: controller.signal,
-        });
-
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
-          setMessages(prev => prev.map(m => m.id === assistantId
-            ? { ...m, content: `❌ Error: ${err.error?.message || res.status}`, streaming: false, error: true }
-            : m));
-          return;
-        }
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let fullText = "";
-        let usage = null;
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith("data:")) continue;
-            const payload = trimmed.slice(5).trim();
-            if (!payload || payload === "[DONE]") continue;
-            try {
-              const chunk = JSON.parse(payload);
-              const delta = chunk.choices?.[0]?.delta?.content;
-              if (delta) {
-                fullText += delta;
-                setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: fullText } : m));
-              }
-              if (chunk.usage) usage = chunk.usage;
-            } catch {}
-          }
-        }
-
-        const elapsed = Date.now() - startTime;
-        setStats({
-          model: modelId,
-          inputTokens: usage?.prompt_tokens || 0,
-          outputTokens: usage?.completion_tokens || 0,
-          latencyMs: elapsed,
-        });
-        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streaming: false } : m));
-      } catch (err) {
-        if (err.name !== "AbortError") {
-          setMessages(prev => prev.map(m => m.id === assistantId
-            ? { ...m, content: `❌ Error: ${err.message}`, streaming: false, error: true } : m));
-        } else {
-          setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streaming: false } : m));
-        }
-      } finally {
-        setStreaming(false);
-        delete abortRef.current.single;
-      }
+      streamContextRef.current["single"] = { mode: "single", assistantId, modelId, startTime };
+      await streamChat("single", {
+        body: { model: modelId, messages: baseMessages, ...requestParams },
+        apiKey,
+      });
     } else {
       // Compare mode: send to all selected models simultaneously
       const validModels = selectedModels.filter(Boolean);
       if (validModels.length === 0) return;
 
       setCompareResults({});
-      setStreaming(true);
-      const startTime = Date.now();
+      validModels.forEach((modelId) => {
+        streamContextRef.current[modelId] = { mode: "compare", modelId, startTime };
+      });
 
-      const results = {};
-      await Promise.allSettled(validModels.map(async (modelId) => {
-        const controller = new AbortController();
-        abortRef.current[modelId] = controller;
-        results[modelId] = { content: "", streaming: true, error: null };
-        setCompareResults({ ...results });
+      await Promise.allSettled(validModels.map((modelId) =>
+        streamChat(modelId, {
+          body: { model: modelId, messages: baseMessages, ...requestParams },
+          apiKey,
+        })
+      ));
 
-        try {
-          const headers = { "Content-Type": "application/json", Accept: "text/event-stream" };
-          if (apiKeyRef.current) headers["Authorization"] = `Bearer ${apiKeyRef.current}`;
-          const res = await fetch("/api/v1/chat/completions", {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              model: modelId,
-              messages: baseMessages,
-              stream: true,
-              temperature: params.temperature,
-              max_tokens: params.maxTokens,
-              top_p: params.topP,
-            }),
-            signal: controller.signal,
-          });
-
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
-            results[modelId] = { ...results[modelId], content: `❌ ${err.error?.message || res.status}`, streaming: false, error: true };
-            setCompareResults({ ...results });
-            return;
-          }
-
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-          let fullText = "";
-
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() || "";
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed.startsWith("data:")) continue;
-              const payload = trimmed.slice(5).trim();
-              if (!payload || payload === "[DONE]") continue;
-              try {
-                const chunk = JSON.parse(payload);
-                const delta = chunk.choices?.[0]?.delta?.content;
-                if (delta) {
-                  fullText += delta;
-                  results[modelId] = { ...results[modelId], content: fullText, streaming: true };
-                  setCompareResults({ ...results });
-                }
-              } catch {}
-            }
-          }
-          results[modelId] = { ...results[modelId], streaming: false };
-          setCompareResults({ ...results });
-        } catch (err) {
-          if (err.name !== "AbortError") {
-            results[modelId] = { ...results[modelId], content: `❌ ${err.message}`, streaming: false, error: true };
-          } else {
-            results[modelId] = { ...results[modelId], streaming: false };
-          }
-          setCompareResults({ ...results });
-        } finally {
-          delete abortRef.current[modelId];
-        }
-      }));
-
-      const elapsed = Date.now() - startTime;
-      setStats({ compareLatencyMs: elapsed, models: validModels.length });
-      setStreaming(false);
+      setStats({ compareLatencyMs: Date.now() - startTime, models: validModels.length });
     }
-  }, [messages, streaming, mode, selectedModels, params]);
+  }, [streaming, mode, selectedModels, buildRequestBody, streamChat]);
 
   const handleStop = useCallback(() => {
-    Object.values(abortRef.current).forEach((c) => c?.abort?.());
-    setStreaming(false);
+    abortAll();
+    // Mark all in-flight messages/results as not streaming. The hook's
+    // AbortError path doesn't call onError, so we finalize the UI here.
     setMessages(prev => prev.map(m => m.streaming ? { ...m, streaming: false } : m));
     setCompareResults(prev => {
       const updated = {};
       for (const [k, v] of Object.entries(prev)) updated[k] = { ...v, streaming: false };
       return updated;
     });
-  }, []);
+  }, [abortAll]);
 
   if (loading) {
     return (
@@ -397,6 +424,8 @@ export default function PlaygroundClient() {
               models={models}
               value={selectedModels[0]}
               onChange={(val) => setSelectedModels([val])}
+              activeProviders={activeProviders}
+              modelAliases={modelAliases}
             />
           ) : (
             <div className="flex flex-wrap gap-2">
@@ -411,6 +440,8 @@ export default function PlaygroundClient() {
                       setSelectedModels(next);
                     }}
                     compact
+                    activeProviders={activeProviders}
+                    modelAliases={modelAliases}
                   />
                   {selectedModels.length > 2 && (
                     <button
@@ -452,11 +483,21 @@ export default function PlaygroundClient() {
                       <span className="truncate text-xs font-medium text-text-main">{modelId}</span>
                     </div>
                     <div className="custom-scrollbar max-h-[60vh] min-h-[200px] overflow-y-auto p-3">
+                      {result?.reasoning && (
+                        <details className="mb-2 rounded bg-black/5 px-2 py-1 dark:bg-white/5">
+                          <summary className="cursor-pointer text-[10px] font-medium text-text-muted">Reasoning</summary>
+                          <p className="mt-1 whitespace-pre-wrap text-xs italic text-text-muted">{result.reasoning}</p>
+                        </details>
+                      )}
                       {result?.content ? (
-                        <p className={`whitespace-pre-wrap text-sm ${result.error ? "text-danger" : "text-text-main"}`}>
-                          {result.content}
+                        <div className={`text-sm ${result.error ? "text-danger" : "text-text-main"}`}>
+                          {result.error ? (
+                            <p className="whitespace-pre-wrap break-words">{result.content}</p>
+                          ) : (
+                            <MessageContent content={result.content} role="assistant" />
+                          )}
                           {result.streaming && <span className="ml-0.5 inline-block size-3 animate-pulse rounded-full bg-primary/50 align-middle" />}
-                        </p>
+                        </div>
                       ) : (
                         <p className="text-sm text-text-muted">
                           {streaming ? "Waiting..." : "Send a message to compare"}
@@ -480,7 +521,11 @@ export default function PlaygroundClient() {
 
         {/* Parameters sidebar (hidden on mobile) */}
         <div className="hidden w-60 shrink-0 xl:block">
-          <ParameterPanel params={params} onChange={setParams} />
+          <ParameterPanel
+            params={params}
+            onChange={setParams}
+            selectedModel={selectedModels[0]}
+          />
         </div>
       </div>
     </div>
@@ -491,12 +536,42 @@ export default function PlaygroundClient() {
 
 function Composer({ onSend, streaming, onStop }) {
   const [text, setText] = useState("");
+  const [attachments, setAttachments] = useState([]);
   const ref = useRef(null);
 
+  // MAX_IMAGE_SIZE: 5MB — base64 encoding ~4/3x the binary, so a 5MB image
+  // becomes ~6.7MB in the request body. Larger images should be rejected to
+  // avoid blowing the body-size limit (10MB) and to keep localStorage sane.
+  const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+
+  const addImage = (file) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    if (file.size > MAX_IMAGE_SIZE) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAttachments((prev) => [...prev, { id: createId(), dataUrl: reader.result, name: file.name }]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    let hadImage = false;
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        hadImage = true;
+        addImage(item.getAsFile());
+      }
+    }
+    if (hadImage) e.preventDefault(); // don't paste image filename as text
+  };
+
   const handleSend = () => {
-    if (!text.trim() || streaming) return;
-    onSend(text);
+    if ((!text.trim() && attachments.length === 0) || streaming) return;
+    onSend(text, attachments);
     setText("");
+    setAttachments([]);
     if (ref.current) ref.current.style.height = "auto";
   };
 
@@ -507,39 +582,66 @@ function Composer({ onSend, streaming, onStop }) {
     }
   };
 
+  const canSend = (text.trim() || attachments.length > 0) && !streaming;
+
   return (
-    <div className="flex items-end gap-2 rounded-brand border border-border-subtle bg-panel p-2">
-      <textarea
-        ref={ref}
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          e.target.style.height = "auto";
-          e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
-        }}
-        onKeyDown={handleKeyDown}
-        placeholder="Send a message... (Enter to send, Shift+Enter for new line)"
-        rows={1}
-        className="custom-scrollbar max-h-[120px] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none"
-      />
-      {streaming ? (
-        <button
-          onClick={onStop}
-          className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-danger/15 text-danger hover:bg-danger/25"
-          title="Stop"
-        >
-          <span className="material-symbols-outlined text-[18px]">stop</span>
-        </button>
-      ) : (
-        <button
-          onClick={handleSend}
-          disabled={!text.trim()}
-          className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-white hover:bg-primary-hover disabled:opacity-40"
-          title="Send"
-        >
-          <span className="material-symbols-outlined text-[18px]">send</span>
-        </button>
+    <div className="flex flex-col gap-2 rounded-brand border border-border-subtle bg-panel p-2">
+      {/* Attachment previews */}
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {attachments.map((att) => (
+            <div key={att.id} className="group relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={att.dataUrl}
+                alt={att.name}
+                className="h-16 w-16 rounded-lg border border-border-subtle object-cover"
+              />
+              <button
+                onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== att.id))}
+                className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-danger text-white opacity-0 transition-opacity group-hover:opacity-100"
+                title="Remove"
+              >
+                <span className="material-symbols-outlined text-[12px]">close</span>
+              </button>
+            </div>
+          ))}
+        </div>
       )}
+      <div className="flex items-end gap-2">
+        <textarea
+          ref={ref}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            e.target.style.height = "auto";
+            e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+          }}
+          onPaste={handlePaste}
+          onKeyDown={handleKeyDown}
+          placeholder="Send a message... (Enter to send, Shift+Enter for newline, paste images)"
+          rows={1}
+          className="custom-scrollbar max-h-[120px] flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-text-main placeholder:text-text-muted focus:outline-none"
+        />
+        {streaming ? (
+          <button
+            onClick={onStop}
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-danger/15 text-danger hover:bg-danger/25"
+            title="Stop"
+          >
+            <span className="material-symbols-outlined text-[18px]">stop</span>
+          </button>
+        ) : (
+          <button
+            onClick={handleSend}
+            disabled={!canSend}
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-white hover:bg-primary-hover disabled:opacity-40"
+            title="Send"
+          >
+            <span className="material-symbols-outlined text-[18px]">send</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }

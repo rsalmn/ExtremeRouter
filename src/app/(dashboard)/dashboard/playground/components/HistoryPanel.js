@@ -1,6 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/shared/components";
 
 function formatTime(ts) {
@@ -15,17 +16,45 @@ function formatTime(ts) {
 }
 
 export default function HistoryPanel({ sessions, currentSession, onNew, onLoad, onDelete }) {
+  const [query, setQuery] = useState("");
+  // #20: re-render every 60s so relative timestamps ("5m ago") stay fresh
+  // without requiring user interaction. Tick only drives re-render via deps.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sessions;
+    return sessions.filter((s) => (s.title || "").toLowerCase().includes(q));
+  }, [sessions, query]);
+
   return (
     <div className="flex flex-col gap-2 rounded-brand border border-border-subtle bg-panel p-3">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-text-muted">History</span>
         <Button size="sm" variant="ghost" icon="add" onClick={onNew} title="New chat" />
       </div>
+      {sessions.length > 0 && (
+        <div className="flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-2 px-2">
+          <span className="material-symbols-outlined text-[14px] text-text-muted">search</span>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search..."
+            className="w-full bg-transparent py-1 text-xs text-text-main placeholder:text-text-muted focus:outline-none"
+          />
+        </div>
+      )}
       {sessions.length === 0 ? (
         <p className="py-4 text-center text-xs text-text-muted">No saved conversations</p>
+      ) : filtered.length === 0 ? (
+        <p className="py-4 text-center text-xs text-text-muted">No matches</p>
       ) : (
         <div className="custom-scrollbar flex max-h-[70vh] flex-col gap-1 overflow-y-auto">
-          {sessions.map((s) => (
+          {filtered.map((s) => (
             <div
               key={s.id}
               className={`group flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors ${

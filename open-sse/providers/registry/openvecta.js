@@ -29,9 +29,9 @@ export default {
   category: "apikey",
   authType: "apikey",
   transport: {
-    baseUrl: "https://openvecta.com/v1/chat/completions",
+    baseUrl: "https://api.openvecta.com/v1/chat/completions",
     format: "openai",
-    validateUrl: "https://openvecta.com/v1/models",
+    validateUrl: "https://api.openvecta.com/v1/models",
   },
   // Seed catalog — offline fallback when live /v1/models fetch fails.
   // Context lengths from OpenVecta's public catalog.
