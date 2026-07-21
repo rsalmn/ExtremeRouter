@@ -204,6 +204,27 @@ export async function proxy(request) {
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
+
+    // C1 FIX: Mutation routes (POST/PUT/PATCH/DELETE) ALWAYS require real
+    // authentication (JWT session or CLI token), even when requireLogin is
+    // disabled. Without this, an attacker who reaches the network when
+    // requireLogin=false can PATCH /api/settings to set requireApiKey=false,
+    // effectively disabling LLM API key auth for all external callers.
+    //
+    // Read-only routes (GET/HEAD) keep the existing bypass: if requireLogin
+    // is disabled, the dashboard is accessible without login — this is safe
+    // because no state is changed and no secrets are exposed.
+    const isMutation = !["GET", "HEAD", "OPTIONS"].includes(request.method);
+    if (isMutation) {
+      if (await hasValidCliToken(request) || await hasValidToken(request))
+        return NextResponse.next();
+      return NextResponse.json(
+        { error: "Authentication required for this action" },
+        { status: 401 }
+      );
+    }
+
+    // Read-only GET/HEAD: allow if requireLogin is disabled.
     if (await hasValidCliToken(request) || await isAuthenticated(request))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -181,6 +181,8 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*gpt-5*codex*",   caps: { reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 400000, maxOutput: 128000 } },
   { pattern: "*gpt-5*",         caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 400000, maxOutput: 128000 } },
   { pattern: "*gpt-4o*",        caps: { vision: true, search: true, contextWindow: 128000, maxOutput: 16384 } },
+  // MAI-Code-1-Flash (Microsoft via GitHub Copilot) — code-generation model.
+  { pattern: "*mai-code*",      caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 256000, maxOutput: 128000 } },
   { pattern: "*gpt-4.1*",       caps: { vision: true, contextWindow: 1000000, maxOutput: 32768 } },
   { pattern: "*gpt-4-turbo*",   caps: { vision: true, contextWindow: 128000 } },
   { pattern: "*gpt-4*",         caps: { contextWindow: 128000 } },

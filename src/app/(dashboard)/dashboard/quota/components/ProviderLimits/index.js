@@ -261,13 +261,18 @@ export default function ProviderLimits() {
       const data = await response.json();
       console.log(`[ProviderLimits] Got quota for ${provider}:`, data);
 
+      // Some usage handlers legitimately return `null` (e.g. TokenRouter when
+      // the user hasn't configured a management key). Guard against null so the
+      // UI doesn't crash reading `data.plan` — show an empty result instead.
+      const safeData = data ?? {};
+
       // Parse quota data using provider-specific parser
-      const parsedQuotas = parseQuotaData(provider, data);
+      const parsedQuotas = parseQuotaData(provider, safeData);
 
       const quotaEntry = {
         quotas: parsedQuotas,
-        plan: data.plan || null,
-        message: data.message || null,
+        plan: safeData.plan || null,
+        message: safeData.message || null,
         raw: data,
       };
 

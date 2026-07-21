@@ -12,6 +12,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const isOllamaLocal = provider === "ollama-local";
   const isCookie = authType === "cookie";
   const isXaiApiKey = provider === "xai" && !isCookie;
+  const isTokenRouter = provider === "tokenrouter";
   const credentialLabel = isCookie ? "Cookie Value" : "API Key";
   const credentialPlaceholder = isCookie
     ? (provider === "grok-web"
@@ -34,6 +35,8 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     proxyPoolId: NONE_PROXY_POOL_VALUE,
     ollamaHostUrl: "",
   });
+  // TokenRouter management key — separate from chat API key, used by Quota Tracker.
+  const [tokenRouterMgmtKey, setTokenRouterMgmtKey] = useState("");
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
     apiVersion: "2024-10-01-preview",
@@ -63,6 +66,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
+    }
+    if (isTokenRouter && tokenRouterMgmtKey.trim()) {
+      return { mgmtKey: tokenRouterMgmtKey.trim() };
     }
     if (providerRegions && region) {
       return { region };
@@ -301,6 +307,23 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           <p className="text-xs text-text-muted">
             Enter the model ID exactly as your compatible endpoint expects it. This model will be saved as the connection default.
           </p>
+        )}
+        {isTokenRouter && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">TokenRouter Management Key (optional)</h3>
+            <Input
+              label="Management Key"
+              type="password"
+              value={tokenRouterMgmtKey}
+              onChange={(e) => setTokenRouterMgmtKey(e.target.value)}
+              placeholder="your_management_key..."
+            />
+            <p className="text-xs text-text-muted mt-2">
+              The management key is separate from the chat API key (sk-...) and is required for
+              Quota Tracker to read your wallet balance. Without it, chat still works but quota
+              tracking is disabled. Get it from the TokenRouter dashboard.
+            </p>
+          </div>
         )}
         {isCloudflareAi && (
           <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">

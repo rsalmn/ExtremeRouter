@@ -34,7 +34,11 @@ export default {
       subscriptionUrl: "https://api.x.ai/v1/user?include=subscription",
     },
   },
-  features: { usage: true },
+  // Both flags required: `usage` gates USAGE_SUPPORTED_PROVIDERS (general
+  // list shown in Quota UI), `usageApikey` gates USAGE_APIKEY_PROVIDERS
+  // (api-key connections allowed past the authType check). xAI billing API
+  // works with both OAuth tokens and API keys.
+  features: { usage: true, usageApikey: true },
   models: [
     // Reasoning LLMs (Responses API + Chat Completions)
     { id: "grok-4.5", name: "Grok 4.5" },

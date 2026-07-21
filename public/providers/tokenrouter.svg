@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0F1F1A"/>
+  <!-- Router box with token slot -->
+  <rect x="14" y="22" width="36" height="22" rx="4" fill="none" stroke="#10B981" stroke-width="3"/>
+  <!-- Token slot (top) -->
+  <rect x="26" y="16" width="12" height="6" rx="1" fill="#10B981"/>
+  <!-- LED indicators -->
+  <circle cx="22" cy="33" r="2.5" fill="#10B981"/>
+  <circle cx="32" cy="33" r="2.5" fill="#10B981" opacity="0.6"/>
+  <circle cx="42" cy="33" r="2.5" fill="#10B981" opacity="0.3"/>
+  <!-- Signal waves below -->
+  <path d="M20 50 Q24 48 24 50" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round"/>
+  <path d="M28 52 Q32 48 32 52" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <path d="M36 50 Q40 48 40 50" fill="none" stroke="#10B981" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+</svg>

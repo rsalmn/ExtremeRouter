@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0F1A2E"/>
+  <!-- Cloud shape (Qwen Cloud branding) -->
+  <path d="M20 40 C14 40 10 36 10 31 C10 26 14 22 19 22 C20 16 25 12 31 12 C38 12 43 17 44 23 C49 23 53 27 53 32 C53 37 49 40 44 40 Z" fill="none" stroke="#615CED" stroke-width="3" stroke-linejoin="round"/>
+  <!-- "Q" letter inside cloud -->
+  <circle cx="32" cy="30" r="6" fill="none" stroke="#615CED" stroke-width="2.5"/>
+  <line x1="36" y1="34" x2="40" y2="38" stroke="#615CED" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

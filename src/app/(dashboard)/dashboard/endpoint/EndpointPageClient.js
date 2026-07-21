@@ -1318,10 +1318,18 @@ export default function APIPageClient({ machineId }) {
 
 
 function ModelAccessModal({ apiKey, onClose, onSaved }) {
-  const [allowedModels, setAllowedModels] = useState(null);
+  // IMPORTANT: keep the early return AFTER all hooks. We initialize
+  // allowedModels directly from apiKey so the very first render already has
+  // a stable array (never null), and we resync via useEffect when apiKey
+  // changes. Returning null before useState/useEffect would violate the
+  // Rules of Hooks (conditional hook execution) and crash React.
+  const [allowedModels, setAllowedModels] = useState(
+    () => (Array.isArray(apiKey?.allowedModels) ? [...apiKey.allowedModels] : []),
+  );
   const [modelInput, setModelInput] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Reset the local draft whenever a different apiKey is opened.
   useEffect(() => {
     if (apiKey) {
       setAllowedModels(Array.isArray(apiKey.allowedModels) ? [...apiKey.allowedModels] : []);
@@ -1334,7 +1342,7 @@ function ModelAccessModal({ apiKey, onClose, onSaved }) {
   const addModel = () => {
     const m = modelInput.trim();
     if (!m) return;
-    if (!allowedModels.includes(m)) setAllowedModels((prev) => [...prev, m]);
+    setAllowedModels((prev) => (prev.includes(m) ? prev : [...prev, m]));
     setModelInput("");
   };
 
