@@ -189,10 +189,16 @@ export class GithubExecutor extends BaseExecutor {
   async execute(options) {
     const { model, log } = options;
 
-    // Only use /responses for models that are explicitly known to need it (e.g. gpt codex models)
-    // and that the /responses endpoint actually serves (excludes Gemini/Claude, see #1062).
-    if (this.knownCodexModels.has(model) && this.supportsResponsesEndpoint(model)) {
-      log?.debug("GITHUB", `Using cached /responses route for ${model}`);
+    const targetFormat = getModelTargetFormat("gh", model);
+    // Models with targetFormat "openai-responses": route directly to /responses.
+    // Covers both registry-declared models (GPT-5.x) and runtime-discovered codex
+    // models. Eliminates one round-trip vs. hitting /chat/completions first.
+    const shouldUseResponses =
+      targetFormat === "openai-responses" ||
+      (this.knownCodexModels.has(model) && this.supportsResponsesEndpoint(model));
+
+    if (shouldUseResponses && this.supportsResponsesEndpoint(model)) {
+      log?.debug("GITHUB", `Using /responses route for ${model}`);
       return this.executeWithResponsesEndpoint(options);
     }
 
@@ -203,7 +209,7 @@ export class GithubExecutor extends BaseExecutor {
     // and the response_format-as-system-prompt workaround is unnecessary because
     // /v1/messages honors JSON-mode natively. Skip sanitization for the native
     // path. Port of decolua/9router#2608.
-    const isClaudeNative = getModelTargetFormat("gh", model) === "claude";
+    const isClaudeNative = targetFormat === "claude";
 
     // Sanitize messages before sending to /chat/completions.
     // This handles Claude models on GitHub Copilot which reject non-text/image_url

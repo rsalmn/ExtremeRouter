@@ -36,9 +36,13 @@ export default {
       scheme: "bearer",
     },
   },
-  // Live discovery only — /v1/models exposes whatever the key has access to.
-  // Empty seed catalog; passthroughModels allows any model id.
-  models: [],
+  // Live discovery via /v1/models — exposes whatever the key has access to.
+  // Seed catalog provides offline fallback when discovery fails or returns empty.
+  models: [
+    { id: "gpt-4o", name: "GPT-4o" },
+    { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+    { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo" },
+  ],
   passthroughModels: true,
   modelsFetcher: {
     url: "https://api.hcnsec.cn/v1/models",
