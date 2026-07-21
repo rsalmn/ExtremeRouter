@@ -39,6 +39,8 @@ export class GithubExecutor extends BaseExecutor {
   }
 
   buildUrl(model, stream, urlIndex = 0) {
+    const targetFormat = getModelTargetFormat("gh", model);
+
     // Claude models: route to Copilot's Anthropic-native /v1/messages shim — the
     // only Copilot endpoint that surfaces prompt-cache token counts for Claude
     // and avoids a lossy round-trip of tool_use/tool_result/thinking content
@@ -46,9 +48,17 @@ export class GithubExecutor extends BaseExecutor {
     // targetFormat (see registry/github.js), which chatCore also uses to
     // translate the request to Claude shape before the executor ever sees it.
     // Port of decolua/9router#2608.
-    if (getModelTargetFormat("gh", model) === "claude" && this.config.messagesUrl) {
+    if (targetFormat === "claude" && this.config.messagesUrl) {
       return this.config.messagesUrl;
     }
+
+    // OpenAI Responses models: route to Copilot's /responses endpoint, which
+    // serves newer GPT models and provides the correct response format for
+    // models marked with targetFormat: "openai-responses" in the registry.
+    if (targetFormat === "openai-responses" && this.config.responsesUrl) {
+      return this.config.responsesUrl;
+    }
+
     return this.config.baseUrl;
   }
 

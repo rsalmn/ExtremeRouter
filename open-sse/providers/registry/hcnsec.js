@@ -36,9 +36,16 @@ export default {
       scheme: "bearer",
     },
   },
-  // Live discovery only — /v1/models exposes whatever the key has access to.
-  // Empty seed catalog; passthroughModels allows any model id.
-  models: [],
+  // Seed catalog — offline fallback when live /v1/models fetch fails.
+  // Typical models available on HCNSEC platform (exact catalog varies by API key).
+  // Live discovery via modelsFetcher provides the real-time list.
+  models: [
+    { id: "gpt-4o", name: "GPT-4o" },
+    { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+    { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
+    { id: "deepseek-v3", name: "DeepSeek V3" },
+    { id: "glm-5", name: "GLM 5" },
+  ],
   passthroughModels: true,
   modelsFetcher: {
     url: "https://api.hcnsec.cn/v1/models",
