@@ -39,6 +39,7 @@ export class GithubExecutor extends BaseExecutor {
   }
 
   buildUrl(model, stream, urlIndex = 0) {
+    const targetFormat = getModelTargetFormat("gh", model);
     // Claude models: route to Copilot's Anthropic-native /v1/messages shim — the
     // only Copilot endpoint that surfaces prompt-cache token counts for Claude
     // and avoids a lossy round-trip of tool_use/tool_result/thinking content
@@ -46,8 +47,13 @@ export class GithubExecutor extends BaseExecutor {
     // targetFormat (see registry/github.js), which chatCore also uses to
     // translate the request to Claude shape before the executor ever sees it.
     // Port of decolua/9router#2608.
-    if (getModelTargetFormat("gh", model) === "claude" && this.config.messagesUrl) {
+    if (targetFormat === "claude" && this.config.messagesUrl) {
       return this.config.messagesUrl;
+    }
+    // OpenAI Responses format: route to /responses endpoint for GPT models
+    // that use the Responses API (gpt-5.x series with targetFormat: "openai-responses").
+    if (targetFormat === "openai-responses" && this.config.responsesUrl) {
+      return this.config.responsesUrl;
     }
     return this.config.baseUrl;
   }
@@ -189,6 +195,15 @@ export class GithubExecutor extends BaseExecutor {
   async execute(options) {
     const { model, log } = options;
 
+    const targetFormat = getModelTargetFormat("gh", model);
+
+    // Models with explicit targetFormat: "openai-responses" go directly to /responses
+    // via buildUrl routing, skipping /chat/completions entirely.
+    if (targetFormat === "openai-responses") {
+      log?.debug("GITHUB", `Using /responses route for ${model} (targetFormat: openai-responses)`);
+      return this.executeWithResponsesEndpoint(options);
+    }
+
     // Only use /responses for models that are explicitly known to need it (e.g. gpt codex models)
     // and that the /responses endpoint actually serves (excludes Gemini/Claude, see #1062).
     if (this.knownCodexModels.has(model) && this.supportsResponsesEndpoint(model)) {
@@ -203,7 +218,7 @@ export class GithubExecutor extends BaseExecutor {
     // and the response_format-as-system-prompt workaround is unnecessary because
     // /v1/messages honors JSON-mode natively. Skip sanitization for the native
     // path. Port of decolua/9router#2608.
-    const isClaudeNative = getModelTargetFormat("gh", model) === "claude";
+    const isClaudeNative = targetFormat === "claude";
 
     // Sanitize messages before sending to /chat/completions.
     // This handles Claude models on GitHub Copilot which reject non-text/image_url
