@@ -35,10 +35,34 @@ export default {
     format: "qwen-web",
     authType: "cookie",
   },
+  // Model entries include capability flags (contextWindow, maxOutput,
+  // supportsReasoning/vision/toolCalling) so the model picker + capability
+  // resolver surface them correctly. Port of OmniRoute commit ccdbc89 (Part 2/3).
   models: [
-    { id: "qwen3.7-max", name: "Qwen3.7 Max" },
-    { id: "qwen3.7-plus", name: "Qwen3.7 Plus" },
-    { id: "qwen3.6-plus", name: "Qwen3.6 Plus" },
+    {
+      id: "qwen3.8-max-preview",
+      name: "Qwen3.8 Max Preview",
+      contextWindow: 1000000,
+      maxOutput: 65536,
+    },
+    {
+      id: "qwen3.7-max",
+      name: "Qwen3.7 Max",
+      contextWindow: 1000000,
+      maxOutput: 65536,
+    },
+    {
+      id: "qwen3.7-plus",
+      name: "Qwen3.7 Plus",
+      contextWindow: 1000000,
+      maxOutput: 65536,
+    },
+    {
+      id: "qwen3.6-plus",
+      name: "Qwen3.6 Plus",
+      contextWindow: 1000000,
+      maxOutput: 65536,
+    },
   ],
   passthroughModels: true,
 };

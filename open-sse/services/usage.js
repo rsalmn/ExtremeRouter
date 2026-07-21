@@ -20,6 +20,7 @@ import {
   getQoderUsage,
 } from "./usage/misc.js";
 import { getXaiUsage } from "./usage/xai.js";
+import { getTokenRouterUsage } from "./usage/tokenrouter.js";
 
 /**
  * Get usage data for a provider connection
@@ -45,6 +46,7 @@ const USAGE_HANDLERS = {
   "vercel-ai-gateway": (c) => getVercelAiGatewayUsage(c.apiKey, c.proxyOptions),
   "codebuddy-cn": (c) => getCodeBuddyCnUsage(c.accessToken, c.apiKey, c.providerSpecificData, c.proxyOptions),
   xai: (c) => getXaiUsage(c, c.proxyOptions),
+  tokenrouter: (c) => getTokenRouterUsage(c, c.providerSpecificData, c.proxyOptions),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null) {

@@ -1,3 +1,33 @@
+# v0.7.4 (2026-07-19)
+
+## Features
+- **Forge Workspace provider**: new API-key provider (forge) with 33 models across 3 pricing tiers (free/pro/enterprise), live model discovery via modelsFetcher, dedicated pricing block, and SVG brand icon.
+- **TokenRouter provider + Quota Tracker**: new API-key provider (tokenrouter) with a separate Management API key (mirrors TokenRouter's two-credential design). Quota card surfaces Wallet / Top-up / Voucher balances from the management endpoint. Handler returns a graceful `message` when no management key is configured (no more UI crash).
+- **Huancheng Public API (hcnsec) provider**: new OpenAI-compatible regional API-key provider.
+- **Qwen Cloud + Qwen Cloud Token Plan providers**: two new dedicated API-key providers for Alibaba Cloud's Bailian Qwen endpoints (pay-as-you-go + token-plan variants).
+- **Alibaba + Alibaba CN providers**: regional Alibaba DashScope API-key providers (international + China mainland base URLs).
+- **GitHub Copilot native /v1/messages routing**: Claude models routed directly to GitHub's `/messages` endpoint (targetFormat:"claude") with `anthropic-version:2023-06-01` header, bypassing Chat Completions quirks and `sanitizeMessagesForChatCompletions`. Result: native Anthropic-format responses for Claude Code, Cline, etc.
+- **GitHub Copilot model catalog sync**: synced to OmniRoute fea1d54 (20 models, including the latest Claude 4.5/4.10 family).
+- **opencode-go effort-tier aliases**: 9 new alias models (`glm-5.2-high/max`, `mimo-v2.5-high/max`, `deepseek-v4-pro-low/medium/high/max`) auto-rewriting model id + injecting `reasoning_effort` via a new EFFORT_TIERS table + `parseEffortLevel()` suffix parser (port of OmniRoute commit 1843b34).
+- **Qwen3.8 Max Preview model**: added to Qwen Web (Subscription) catalog. Auto-enables thinking mode via `REQUIRED_THINKING_MODELS` set; SSE parser handles `thinking_summary` via `delta.extra.summary_thought.content[]`.
+
+## Fixes
+- **C1 Critical — Dashboard auth bypass**: `dashboardGuard.js` now uses method-based routing. Mutation routes (POST/PUT/PATCH/DELETE) **always** require a real JWT/CLI token even when `requireLogin=false`. Previously anyone with network access to the dashboard port could mutate state (create/delete providers, keys, settings) without authentication.
+- **Cline/GLM 500 `stream_options` error**: `DefaultExecutor.transformRequest` now injects `stream_options: { include_usage: true }` on streaming requests so providers that require usage-on-stream don't 500. Signature expanded to `(model, body, stream, credentials)`.
+- **HuggingChat provider dead (HTML 200 response)**: `zai-org/GLM-5.2` was retired by HF. Switched `DEFAULT_MODEL` to `omni` (HF's auto-router), always send `preprompt: ""`, switched `tlsFetch` → native `proxyAwareFetch` (no longer needs TLS impersonation), and added `isEncryptedCredentialBlob` guard.
+- **xAI Quota Tracker empty card**: xAI removed both `/v1/billing?format=credits` and `/v1/user?include=subscription` (now 404) and migrated billing to a separate Management API on `management-api.x.ai` (requires a different key). Handler rewritten to return a clear `message` explaining where to find usage (`console.x.ai → Billing`) instead of leaving the card blank. No network calls — no more 404 spam.
+- **ModelAccessModal crash (`Cannot read properties of null (reading 'length')`)**: `allowedModels` was `useState(null)` and only synced to an array inside `useEffect` (post-render), so the first render hit `.length` on null. Now uses lazy initializer `useState(() => [...])` so the first render already has a stable array.
+- **TokenRouter quota `Cannot read properties of null (reading 'plan')`**: handler previously returned `null` when no management key was present; UI didn't guard. Fixed on both sides — handler returns an object with a `message` field (never null), and `ProviderLimits/index.js` uses `data ?? {}` for null-safe access.
+- **Playground value/key TypeErrors (3 separate crashes)**: added `valueStr` coercion in ModelPicker, defensive coercion in `useModelCaps.getCaps`, and `model.value || model.name || model.id` extraction in the modal `onSelect` handler (modal passes the whole object, not a string).
+- **Playground `[object Object]` model name after model swap**: extraction fix above also resolved the rendering bug.
+
+## Improvements
+- **SanitizeHtml utility** (`src/shared/utils/sanitizeHtml.js`): regex-based HTML sanitizer for markdown model output. Strips `<script>`/`<iframe>`/`<object>`/`<embed>`/`<form>`/`<style>`, neutralizes `on*` event handlers and `javascript:`/`data:` URLs. Defense-in-depth on top of `marked`'s AST (already constrained).
+- **Playground MessageContent component**: renders assistant content as sanitized markdown, user/error as plain text. Code blocks get monospace styling + copy button.
+- **AddApiKeyModal**: added TokenRouter management-key field UI (paired with chat API key).
+- **Provider icon assets**: added forge, tokenrouter, qwen-cloud, qwen-cloud-token-plan, alibaba, alibaba-cn, hcnsec SVG icons + registered them in `providerIcon.js`'s `SVG_ICON_IDS`.
+- **SanitizeHtml unit tests** (`tests/unit/sanitize-html.test.js`): regression coverage for the sanitizer.
+
 # v0.7.2 (2026-07-18)
 
 ## Features

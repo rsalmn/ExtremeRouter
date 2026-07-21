@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#1A1A2E"/>
+  <!-- Alibaba orange smile/curl shape -->
+  <path d="M16 22 C16 22 24 14 32 14 C40 14 48 22 48 22" fill="none" stroke="#FF6A00" stroke-width="4" stroke-linecap="round"/>
+  <path d="M14 38 C14 38 24 32 32 32 C40 32 50 38 50 38" fill="none" stroke="#FF6A00" stroke-width="4" stroke-linecap="round"/>
+  <!-- Eyes -->
+  <circle cx="24" cy="28" r="2.5" fill="#FF6A00"/>
+  <circle cx="40" cy="28" r="2.5" fill="#FF6A00"/>
+  <!-- CN badge -->
+  <text x="32" y="54" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="bold" fill="#FF6A00">CN</text>
+</svg>

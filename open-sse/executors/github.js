@@ -9,6 +9,7 @@ import { parseSSELine, formatSSE } from "../utils/streamHelpers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
+import { getModelTargetFormat } from "../config/providerModels.js";
 import crypto from "crypto";
 
 export class GithubExecutor extends BaseExecutor {
@@ -38,12 +39,22 @@ export class GithubExecutor extends BaseExecutor {
   }
 
   buildUrl(model, stream, urlIndex = 0) {
+    // Claude models: route to Copilot's Anthropic-native /v1/messages shim — the
+    // only Copilot endpoint that surfaces prompt-cache token counts for Claude
+    // and avoids a lossy round-trip of tool_use/tool_result/thinking content
+    // blocks through the OpenAI shape. Driven by the registry's per-model
+    // targetFormat (see registry/github.js), which chatCore also uses to
+    // translate the request to Claude shape before the executor ever sees it.
+    // Port of decolua/9router#2608.
+    if (getModelTargetFormat("gh", model) === "claude" && this.config.messagesUrl) {
+      return this.config.messagesUrl;
+    }
     return this.config.baseUrl;
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, model = null) {
     const token = credentials.copilotToken || credentials.accessToken;
-    return {
+    const headers = {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
       "copilot-integration-id": "vscode-chat",
@@ -57,6 +68,14 @@ export class GithubExecutor extends BaseExecutor {
       "X-Initiator": "user",
       "Accept": stream ? "text/event-stream" : "application/json"
     };
+    // Claude models routed to the Anthropic-native /v1/messages shim require
+    // the anthropic-version header (harmless no-op on /chat/completions and
+    // /responses, but /v1/messages rejects the request without it).
+    // Port of decolua/9router#2608.
+    if (model && getModelTargetFormat("gh", model) === "claude") {
+      headers["anthropic-version"] = "2023-06-01";
+    }
+    return headers;
   }
 
   // Sanitize messages for GitHub Copilot /chat/completions endpoint.
@@ -131,14 +150,26 @@ export class GithubExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    // Claude models arrive here already translated to Anthropic-native shape by
+    // chatCore (registry targetFormat: "claude") and are dispatched at /v1/messages
+    // (buildUrl above), which behaves like the real Anthropic API. The quirks
+    // below (max_tokens→max_completion_tokens rename, reasoning_effort="none"
+    // strip) are /chat/completions-only OpenAI-shape concerns — applying them
+    // to a Claude-shape body would either rename away a valid Anthropic field
+    // or strip thinking config the native endpoint honors. Skip them entirely
+    // for the native path. Port of decolua/9router#2608.
+    const isClaudeNative = getModelTargetFormat("gh", model) === "claude";
+
     const transformed = { ...body };
-    if (this.requiresMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
-      transformed.max_completion_tokens = transformed.max_tokens;
-      delete transformed.max_tokens;
-    }
-    // "none" means no thinking — strip it so models that don't support "none" don't 400
-    if (transformed.reasoning_effort === "none") {
-      delete transformed.reasoning_effort;
+    if (!isClaudeNative) {
+      if (this.requiresMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
+        transformed.max_completion_tokens = transformed.max_tokens;
+        delete transformed.max_tokens;
+      }
+      // "none" means no thinking — strip it so models that don't support "none" don't 400
+      if (transformed.reasoning_effort === "none") {
+        delete transformed.reasoning_effort;
+      }
     }
     // Config-driven strip of params unsupported by this provider/model
     stripUnsupportedParams("github", model, transformed);
@@ -165,19 +196,29 @@ export class GithubExecutor extends BaseExecutor {
       return this.executeWithResponsesEndpoint(options);
     }
 
-    // Sanitize messages before sending to /chat/completions
-    // This handles Claude models on GitHub Copilot which reject non-text/image_url content types
-    const sanitizedOptions = {
-      ...options,
-      body: this.sanitizeMessagesForChatCompletions(options.body)
-    };
+    // Claude models with targetFormat: "claude" are routed to the Anthropic-native
+    // /v1/messages shim (buildUrl) and have already been translated to Claude shape
+    // by chatCore. The /chat/completions sanitization below would corrupt native
+    // tool_use/tool_result/thinking content blocks (it serializes them as text),
+    // and the response_format-as-system-prompt workaround is unnecessary because
+    // /v1/messages honors JSON-mode natively. Skip sanitization for the native
+    // path. Port of decolua/9router#2608.
+    const isClaudeNative = getModelTargetFormat("gh", model) === "claude";
+
+    // Sanitize messages before sending to /chat/completions.
+    // This handles Claude models on GitHub Copilot which reject non-text/image_url
+    // content types — only applies to the legacy /chat/completions path now.
+    const sanitizedOptions = isClaudeNative
+      ? options
+      : { ...options, body: this.sanitizeMessagesForChatCompletions(options.body) };
 
     const result = await super.execute({ ...sanitizedOptions, proxyOptions: options.proxyOptions || null });
 
     // Only escalate to /responses for models that endpoint can actually serve.
     // Gemini/Claude would otherwise loop into a misleading "does not support
     // Responses API" 400 instead of surfacing the real /chat/completions error (#1062).
-    if (result.response.status === HTTP_STATUS.BAD_REQUEST && this.supportsResponsesEndpoint(model)) {
+    // Claude native path already has its own endpoint — never escalate.
+    if (!isClaudeNative && result.response.status === HTTP_STATUS.BAD_REQUEST && this.supportsResponsesEndpoint(model)) {
       const errorBody = await result.response.clone().text();
 
       if (errorBody.includes("not accessible via the /chat/completions endpoint") || errorBody.includes("The requested model is not supported")) {

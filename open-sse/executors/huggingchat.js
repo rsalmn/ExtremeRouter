@@ -3,7 +3,9 @@ import { PROVIDERS } from "../config/providers.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
 import { sseChunk } from "../utils/sse.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { tlsFetch } from "../utils/tlsClient.js";
+// NOTE: tlsFetch is intentionally NOT imported here. HuggingFace sits behind
+// CloudFront + AWS WAF which fingerprints TLS — the wreq-js impersonation
+// signature triggers the WAF (causing HTML login redirects). Use native fetch.
 
 // HuggingChatExecutor — HuggingChat (huggingface.co/chat) Web Provider.
 //
@@ -33,7 +35,11 @@ const CONVERSATION_URL = `${HUGGINGFACE_BASE}/chat/conversation`;
 const API_CONVERSATIONS_URL = `${HUGGINGFACE_BASE}/chat/api/v2/conversations`;
 
 const DEFAULT_COOKIE_NAME = "hf-chat";
-const DEFAULT_MODEL = "baidu/ERNIE-4.5-VL-424B-A47B-Base-PT";
+// Default to "omni" — HF's auto-router. Individual model ids get retired by
+// HuggingFace without notice, which causes /chat/conversation to fall back to
+// serving the HTML SPA shell instead of the JSON API response (200+HTML, no
+// conversationId). The omni router is stable and always available.
+const DEFAULT_MODEL = "omni";
 
 const USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
@@ -206,7 +212,12 @@ function extractInitialParentMessageId(value) {
 }
 
 async function fetchInitialParentMessageId(conversationId, headers, proxyOptions, signal) {
-  const res = await tlsFetch(
+  // Use proxyAwareFetch (native Node fetch) — NOT tlsFetch. HuggingFace sits
+  // behind CloudFront + AWS WAF which fingerprints the TLS layer; the wreq-js
+  // impersonation signature actually TRIGGERS the WAF (it doesn't match the
+  // real navigator/UA behaviour), causing HF to redirect to the HTML login SPA
+  // instead of returning JSON. Native fetch passes cleanly. Mirrors OmniRoute.
+  const res = await proxyAwareFetch(
     `${API_CONVERSATIONS_URL}/${conversationId}`,
     { method: "GET", headers, signal },
     proxyOptions
@@ -546,10 +557,18 @@ export class HuggingChatExecutor extends BaseExecutor {
     // -- Step 1: Create conversation ----------------------------------------
     let conversationId;
     try {
-      const createBody = { model: resolvedModel };
-      if (systemPrompt) createBody.preprompt = systemPrompt;
+      // Build the create-conversation body. HuggingFace's SPA always sends
+      // `preprompt` (even as "") — omitting it has been observed to make the
+      // upstream fall back to serving the HTML SPA shell instead of the JSON
+      // API response. Always include the field.
+      const createBody = {
+        model: resolvedModel,
+        preprompt: systemPrompt || "",
+      };
 
-      const createRes = await tlsFetch(
+      // Use proxyAwareFetch (native Node fetch) — see fetchInitialParentMessageId
+      // note above. tlsFetch triggers CloudFront WAF → HTML login redirect.
+      const createRes = await proxyAwareFetch(
         CONVERSATION_URL,
         {
           method: "POST",
@@ -655,7 +674,9 @@ export class HuggingChatExecutor extends BaseExecutor {
 
     let upstreamResponse;
     try {
-      upstreamResponse = await tlsFetch(
+      // Use proxyAwareFetch (native Node fetch) — see note above. tlsFetch
+      // triggers CloudFront WAF → HTML login redirect.
+      upstreamResponse = await proxyAwareFetch(
         messageUrl,
         {
           method: "POST",

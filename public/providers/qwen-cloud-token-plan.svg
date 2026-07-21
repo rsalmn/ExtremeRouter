@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0F1A2E"/>
+  <!-- Cloud shape -->
+  <path d="M20 40 C14 40 10 36 10 31 C10 26 14 22 19 22 C20 16 25 12 31 12 C38 12 43 17 44 23 C49 23 53 27 53 32 C53 37 49 40 44 40 Z" fill="none" stroke="#615CED" stroke-width="3" stroke-linejoin="round"/>
+  <!-- Token coin overlay -->
+  <circle cx="44" cy="42" r="10" fill="#FFB800" stroke="#0F1A2E" stroke-width="2"/>
+  <text x="44" y="47" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" font-weight="bold" fill="#0F1A2E">T</text>
+</svg>

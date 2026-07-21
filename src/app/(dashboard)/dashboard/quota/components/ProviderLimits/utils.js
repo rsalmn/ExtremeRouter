@@ -481,6 +481,24 @@ export function parseQuotaData(provider, data) {
         }
         break;
       }
+      case "tokenrouter": {
+        // TokenRouter — wallet (top-up + voucher) from management API.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remaining: quota.remaining,
+              remainingPercentage: quota.remainingPercentage,
+              resetAt: quota.resetAt || null,
+              recurring: false,
+              unlimited: false,
+            });
+          });
+        }
+        break;
+      }
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {

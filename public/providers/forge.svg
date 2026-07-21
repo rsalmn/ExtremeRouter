@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#1A1A2E"/>
+  <!-- Flame / fire shape representing "Forge" -->
+  <path d="M32 8 C32 8 22 20 22 32 C22 38 26 42 32 44 C38 42 42 38 42 32 C42 20 32 8 32 8Z" fill="none" stroke="#FF6B35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M32 18 C32 18 26 26 26 34 C26 38 28 40 32 41 C36 40 38 38 38 34 C38 26 32 18 32 18Z" fill="#FF6B35" opacity="0.8"/>
+  <!-- Anvil base -->
+  <path d="M18 48 L26 44 L38 44 L46 48 L46 52 L18 52Z" fill="#FF6B35" opacity="0.6"/>
+  <rect x="18" y="52" width="28" height="4" rx="2" fill="#FF6B35" opacity="0.4"/>
+</svg>

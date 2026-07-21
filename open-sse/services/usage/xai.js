@@ -1,98 +1,62 @@
 // xAI (Grok) usage handler for Quota Tracker.
 //
-// Uses two read-only endpoints with the OAuth access token:
-//   1. GET /v1/billing?format=credits — on-demand credits (remaining, used, total)
-//   2. GET /v1/user?include=subscription — active subscription plan name
+// STATUS: DISABLED — xAI removed the public billing/subscription endpoints from
+// the inference API (api.x.ai). Both endpoints below now return HTTP 404:
+//   - GET /v1/billing?format=credits  -> 404 (removed)
+//   - GET /v1/user?include=subscription -> 404 (removed)
 //
-// Only OAuth connections are eligible (the token scope includes grok-cli:access).
-// API-key xAI connections are excluded by the USAGE_SUPPORTED_PROVIDERS gate.
+// xAI migrated billing & usage tracking to a SEPARATE Management API on a
+// different host (https://management-api.x.ai) that requires a dedicated
+// Management API key — distinct from both the chat API key and the OAuth
+// access token. The Management API is only available to account owners via
+// console.x.ai → Settings → Management Keys.
 //
-// Reference: github.com/decolua/9router PR #2672
+// As of 2026-07, there is no public REST endpoint reachable with the
+// credentials stored in an ExtremeRouter connection. Until xAI documents a
+// public billing endpoint OR ExtremeRouter adds a Management Key field (same
+// two-key design as TokenRouter), this handler returns an informational
+// message so the Quota Tracker card explains WHY it is empty instead of
+// appearing blank.
+//
+// Reference: github.com/decolua/9router PR #2672 (original implementation
+// against the now-defunct endpoints).
 
-import { U, parseResetTime, toFiniteNumber } from "./shared.js";
-import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { U } from "./shared.js";
 
-const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+// Kept for forward-compatibility: if a Management API key is ever wired up
+// (providerSpecificData.mgmtKey, mirroring TokenRouter), this handler can be
+// re-enabled against https://management-api.x.ai/billing without touching the
+// registration in services/usage.js.
+export async function getXaiUsage(credentials, _proxyOptions = null) {
+  // Sanity reference — confirms the provider config still exists. Intentionally
+  // unused for network calls while the handler is in the informational state.
+  void U;
 
-export async function getXaiUsage(credentials, proxyOptions = null) {
-  const token = credentials?.accessToken;
-  if (!token) return null;
+  const hasMgmtKey = Boolean(
+    credentials?.providerSpecificData?.mgmtKey ||
+      credentials?.providerDataWithProjectId?.mgmtKey
+  );
 
-  const cfg = U("xai");
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: "application/json",
-    "User-Agent": USER_AGENT,
-  };
-
-  // Fetch billing + subscription in parallel
-  const [billingRes, subRes] = await Promise.allSettled([
-    cfg.billingUrl
-      ? proxyAwareFetch(cfg.billingUrl, { method: "GET", headers }, proxyOptions)
-      : Promise.reject(new Error("no billingUrl")),
-    cfg.subscriptionUrl
-      ? proxyAwareFetch(cfg.subscriptionUrl, { method: "GET", headers }, proxyOptions)
-      : Promise.reject(new Error("no subscriptionUrl")),
-  ]);
-
-  let credits = null;
-  let plan = null;
-
-  // Parse billing response (credits data)
-  if (billingRes.status === "fulfilled" && billingRes.value?.ok) {
-    const billingData = await billingRes.value.json().catch(() => null);
-    if (billingData) {
-      const remaining = toFiniteNumber(billingData.credits ?? billingData.remaining_credits);
-      const used = toFiniteNumber(billingData.used_credits ?? billingData.used);
-      const total = toFiniteNumber(billingData.total_credits ?? billingData.total);
-
-      if (remaining > 0 || total > 0 || used > 0) {
-        credits = {
-          remaining,
-          used,
-          total: total || (remaining + used),
-          remainingPercentage: total > 0 ? Math.round((remaining / total) * 100) : null,
-          resetAt: parseResetTime(billingData.reset_at ?? billingData.reset_date) || null,
-        };
-      }
-    }
-  }
-
-  // Parse subscription response (plan name)
-  if (subRes.status === "fulfilled" && subRes.value?.ok) {
-    const subData = await subRes.value.json().catch(() => null);
-    if (subData) {
-      const sub = subData.subscription || subData;
-      plan = sub.plan || sub.tier || sub.name || null;
-    }
-  }
-
-  // Build quotas object
-  const quotas = {};
-
-  if (credits) {
-    quotas["Credits"] = {
-      used: credits.used,
-      total: credits.total,
-      remaining: credits.remaining,
-      remainingPercentage: credits.remainingPercentage,
-      resetAt: credits.resetAt,
-    };
-  }
-
-  // If no numeric credit data but we have a plan, show it as info-only quota
-  if (Object.keys(quotas).length === 0 && plan) {
-    quotas[plan] = {
-      used: 0,
-      total: 0,
-      unlimited: true,
-      remainingPercentage: null,
+  if (hasMgmtKey) {
+    // Forward-compat hook: if a Management Key is present we still cannot reach
+    // a documented billing endpoint today, but we acknowledge the credential
+    // so the message can guide the user.
+    return {
+      quotas: {},
+      plan: null,
+      credits: null,
+      message:
+        "xAI Management API key detected, but the billing endpoint is not yet implemented. " +
+        "Usage tracking for xAI is pending upstream documentation.",
     };
   }
 
   return {
-    quotas,
-    plan,
-    credits,
+    quotas: {},
+    plan: null,
+    credits: null,
+    message:
+      "xAI removed the public billing API. Usage tracking is only available in the " +
+      "xAI Console at console.x.ai → Billing.",
   };
 }

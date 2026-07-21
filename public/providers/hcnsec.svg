@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#0A1929"/>
+  <!-- Shield (cybersecurity branding) -->
+  <path d="M32 8 L52 16 L52 32 C52 44 42 52 32 56 C22 52 12 44 12 32 L12 16 Z" fill="none" stroke="#0EA5E9" stroke-width="3" stroke-linejoin="round"/>
+  <!-- HC monogram -->
+  <text x="32" y="38" text-anchor="middle" font-family="system-ui,sans-serif" font-size="16" font-weight="bold" fill="#0EA5E9">HC</text>
+  <!-- Lock detail at bottom of shield -->
+  <rect x="28" y="44" width="8" height="6" rx="1" fill="#0EA5E9" opacity="0.7"/>
+  <path d="M29 44 V41 C29 39.5 30 38 32 38 C34 38 35 39.5 35 41 V44" fill="none" stroke="#0EA5E9" stroke-width="1.5" opacity="0.7"/>
+</svg>

@@ -130,6 +130,13 @@ import p127 from "./perplexity-agent.js";
 import p128 from "./featherless.js";
 import p129 from "./moonshot.js";
 import p130 from "./qwencloud.js";
+import p131 from "./forge.js";
+import p132 from "./tokenrouter.js";
+import p133 from "./qwen-cloud.js";
+import p134 from "./qwen-cloud-token-plan.js";
+import p135 from "./alibaba.js";
+import p136 from "./alibaba-cn.js";
+import p137 from "./hcnsec.js";
 
 export default [
   p0,
@@ -262,5 +269,12 @@ export default [
   p127,
   p128,
   p129,
-  p130
+  p130,
+  p131,
+  p132,
+  p133,
+  p134,
+  p135,
+  p136,
+  p137,
 ];

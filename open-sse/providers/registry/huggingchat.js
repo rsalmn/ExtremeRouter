@@ -45,6 +45,11 @@ export default {
   // the upstream model id verbatim. Vision/tool/reasoning capabilities are not
   // surfaced here (plain text chat only).
   models: [
+    // "omni" is HuggingChat's internal auto-router — it picks the best model
+    // dynamically. This is what the SPA sends by default when no specific model
+    // is selected, and is the most reliable entry (individual model ids can be
+    // retired by HF at any time, causing 200+HTML fallbacks).
+    { id: "omni", name: "Omni (Auto-Router)" },
     { id: "baidu/ERNIE-4.5-VL-424B-A47B-Base-PT", name: "ERNIE 4.5 VL 424B A47B Base PT" },
     { id: "CohereLabs/c4ai-command-r7b-12-2024", name: "Command R7B 12-2024" },
     { id: "CohereLabs/command-a-reasoning-08-2025", name: "Command A Reasoning 08-2025" },

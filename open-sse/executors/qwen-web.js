@@ -58,6 +58,11 @@ const MODEL_ALIASES = {
 
 const DEFAULT_MODEL = "qwen3.7-max";
 
+// Some Qwen models reject requests with `thinking_enabled: false`. The model
+// name doesn't always contain "think"/"reason", so we maintain an explicit
+// allowlist — these models MUST get thinking_enabled=true.
+const REQUIRED_THINKING_MODELS = new Set(["qwen3.8-max-preview"]);
+
 function mapModel(modelId) {
   return MODEL_ALIASES[modelId] || modelId;
 }
@@ -161,7 +166,11 @@ function foldMessages(messages) {
 
 function buildMessagePayload(chatId, modelId, prompt, requestedModel) {
   const fid = uuid();
-  const enableThinking = /think|reason|r1/i.test(requestedModel);
+  // Thinking must be enabled when (a) the user picked a thinking-flavored
+  // model name, OR (b) the model is in REQUIRED_THINKING_MODELS (those models
+  // reject thinking_enabled:false with "Invalid input or attachment").
+  const enableThinking =
+    REQUIRED_THINKING_MODELS.has(modelId) || /think|reason|r1/i.test(requestedModel);
   const featureConfig = {
     thinking_enabled: enableThinking,
     output_schema: "phase",
@@ -169,6 +178,9 @@ function buildMessagePayload(chatId, modelId, prompt, requestedModel) {
     research_mode: "normal",
     auto_search: false,
   };
+  // Payload shape mirrors the proven OmniRoute reference implementation.
+  // Adding extra fields (version, id, extra, edited, error, turn_id, instructions)
+  // has been observed to trigger "invalid_input" rejections — keep it minimal.
   return {
     stream: true,
     incremental_output: true,
@@ -209,11 +221,41 @@ function parseSseDelta(line) {
   } catch {
     return null;
   }
+  // v2.1 error envelope: top-level `error` object arrives as its own event
+  // (e.g. {"error":{"code":"invalid_input","details":"..."},"response_id":...}).
+  // Surface it so the streaming transform can show the message instead of
+  // silently ending with empty content.
+  if (parsed?.error) {
+    const details = parsed.error.details || parsed.error.message || parsed.error.code || "upstream error";
+    return { kind: "error", text: details };
+  }
+  // Lifecycle events (response.created, response.completed, etc.) carry no
+  // content — ignore. The v2.1 protocol wraps them as {"<event_name>": {...}}.
+  if (parsed?.response_created || parsed?.response_completed) return null;
+
   const delta = parsed?.choices?.[0]?.delta;
   if (!delta) return null;
   const phase = delta.phase;
   const content = typeof delta.content === "string" ? delta.content : "";
-  if (phase === "think" || phase === "thinking_summary") {
+
+  // thinking_summary phase (qwen3.8+ / v2.1): the actual reasoning text lives
+  // in delta.extra.summary_thought.content[] (array of strings), NOT in
+  // delta.content (which is empty ""). Same for summary_title. Concatenate
+  // the array entries so the reasoning stream isn't dropped on the floor.
+  if (phase === "thinking_summary") {
+    const extra = delta.extra || {};
+    const parts = [];
+    if (Array.isArray(extra.summary_title?.content)) {
+      parts.push(...extra.summary_title.content);
+    }
+    if (Array.isArray(extra.summary_thought?.content)) {
+      parts.push(...extra.summary_thought.content);
+    }
+    const text = parts.filter(Boolean).join("\n");
+    return text ? { kind: "think", text } : null;
+  }
+
+  if (phase === "think") {
     return { kind: "think", text: content };
   }
   // answer phase or a null/absent phase both carry assistant content.
@@ -269,7 +311,11 @@ function buildClientStream(upstreamBody, modelId, signal) {
               emittedRole = true;
               controller.enqueue(push({ role: "assistant", content: "" }));
             }
-            if (delta.kind === "answer") {
+            if (delta.kind === "error") {
+              // v2.1 upstream error mid-stream — surface as content so the user
+              // sees why the response stopped (e.g. "Invalid input or attachment").
+              controller.enqueue(push({ content: `\n\n[Qwen error: ${delta.text}]` }));
+            } else if (delta.kind === "answer") {
               controller.enqueue(push({ content: delta.text }));
             } else if (delta.kind === "think") {
               controller.enqueue(push({ reasoning_content: delta.text }));
@@ -297,7 +343,8 @@ async function collectStream(upstreamBody, signal) {
   const decoder = new TextDecoder();
   let content = "";
   let reasoning = "";
-  if (!reader) return { content, reasoning };
+  let error = "";
+  if (!reader) return { content, reasoning, error };
 
   let buffer = "";
   try {
@@ -313,12 +360,13 @@ async function collectStream(upstreamBody, signal) {
         if (!delta) continue;
         if (delta.kind === "answer") content += delta.text;
         else if (delta.kind === "think") reasoning += delta.text;
+        else if (delta.kind === "error") error = delta.text;
       }
     }
   } catch {
     /* upstream closed mid-stream — return what we have */
   }
-  return { content, reasoning };
+  return { content, reasoning, error };
 }
 
 // ── Executor ────────────────────────────────────────────────────────────
@@ -478,8 +526,19 @@ export class QwenWebExecutor extends BaseExecutor {
     }
 
     if (!stream) {
-      const { content, reasoning } = await collectStream(upstream.body, signal);
-      const message = { role: "assistant", content: content || "" };
+      const { content, reasoning, error } = await collectStream(upstream.body, signal);
+      // If the upstream sent an error envelope mid-stream (v2.1 format) AND no
+      // content was produced, treat it as a failed request so the user sees the
+      // real cause instead of an empty 200.
+      if (error && !content) {
+        return {
+          response: errorResponse(502, `Qwen error: ${error}`, "UPSTREAM_ERROR"),
+          url: completionUrl,
+          headers: buildHeaders(token, cookieHeader, chatId),
+          transformedBody: msgPayload,
+        };
+      }
+      const message = { role: "assistant", content: content || (error ? `[Qwen error: ${error}]` : "") };
       if (reasoning) message.reasoning_content = reasoning;
       return {
         response: new Response(
