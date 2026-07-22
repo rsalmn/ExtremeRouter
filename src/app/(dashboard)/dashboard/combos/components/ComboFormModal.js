@@ -24,6 +24,22 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
 
+  // H3 FIX: reset local draft whenever the modal is (re)opened. The parent
+  // mounts the create modal once with a static key, so useState initializers
+  // only ran on first mount — reopening Create after closing showed the
+  // previous session's name/models. Re-seed from the `combo` prop (undefined
+  // for create) on each open transition so the form starts clean.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  useEffect(() => {
+    if (isOpen && !wasOpen) {
+      setName(combo?.name || "");
+      setModels(Array.isArray(combo?.models) ? [...combo.models] : []);
+      setNameError("");
+      setShowModelSelect(false);
+    }
+    setWasOpen(isOpen);
+  }, [isOpen, wasOpen, combo]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -44,15 +60,20 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
 
   useEffect(() => {
     if (!isOpen) return;
+    // L9 FIX: guard against setState-after-unmount. If the modal closes while
+    // the fetch is in flight, the cancelled flag prevents a state update on an
+    // unmounted component (React warning + potential memory leak).
+    let cancelled = false;
     (async () => {
       try {
         const res = await fetch("/api/models/alias");
-        if (res.ok) {
+        if (!cancelled && res.ok) {
           const data = await res.json();
           setModelAliases(data.aliases || {});
         }
       } catch { /* non-fatal */ }
     })();
+    return () => { cancelled = true; };
   }, [isOpen]);
 
   const validateName = (value) => {
@@ -70,15 +91,17 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   };
 
   const handleAddModel = (model) => {
-    if (!models.includes(model.value)) setModels([...models, model.value]);
+    // H4 FIX: functional update — reading `models` from the closure lost rapid
+    // adds before re-render (only the last survived). Derive from prev state.
+    setModels((prev) => (prev.includes(model.value) ? prev : [...prev, model.value]));
   };
 
   const handleDeselectModel = (model) => {
-    setModels(models.filter((m) => m !== model.value));
+    setModels((prev) => prev.filter((m) => m !== model.value));
   };
 
   const handleRemoveModel = (index) => {
-    setModels(models.filter((_, i) => i !== index));
+    setModels((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleMoveUp = (index) => {

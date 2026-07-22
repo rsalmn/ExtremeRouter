@@ -87,21 +87,71 @@ export default function CombosPageInner() {
         try {
           const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
           // H5 FIX: Use functional update to avoid stale closure on `combos`
-          if (res.ok) setCombos(prev => prev.filter((c) => c.id !== id));
-        } catch (error) { console.log("Error deleting combo:", error); }
+          if (res.ok) {
+            setCombos(prev => prev.filter((c) => c.id !== id));
+          } else {
+            // M5 FIX: previously silent on failure — card stayed in the list
+            // with no indication the delete was rejected. Surface the error.
+            const err = await res.json().catch(() => ({}));
+            alert(err.error || `Failed to delete combo (${res.status})`);
+          }
+        } catch (error) {
+          console.log("Error deleting combo:", error);
+          alert("Failed to delete combo — network error");
+        }
       },
     });
   };
 
   const handleSetComboStrategy = async (comboName, patch) => {
+    // H2 FIX: send ONLY the changed combo entry instead of the full
+    // comboStrategies snapshot. The backend now deep-merges comboStrategies
+    // at the combo-name level (settingsRepo.updateSettings), so a concurrent
+    // edit to a different combo survives. Previously the full-map PATCH raced
+    // with other edits and the last writer silently dropped the others.
+    //
+    // L4 FIX: when the strategy changes, strip stale role-specific fields from
+    // the previous strategy so they don't accumulate forever (e.g. switching
+    // fusion→swarm previously left judgeModel sitting unused in settings, and
+    // swarm→fusion left managerModel/staffModel/auditModel). Strip the fields
+    // the new strategy doesn't use before sending.
     try {
-      const updated = { ...comboStrategies };
-      const next = { ...(updated[comboName] || {}), ...patch };
-      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") delete updated[comboName];
-      else updated[comboName] = next;
-      await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ comboStrategies: updated }) });
-      setComboStrategies(updated);
-    } catch (error) { console.log("Error updating combo strategy:", error); }
+      const current = (comboStrategies[comboName] || {});
+      const merged = { ...current, ...patch };
+      const nextStrat = merged.fallbackStrategy;
+
+      // Fields each strategy actually uses. Everything else is stale.
+      const ROLE_FIELDS = {
+        fusion: ["judgeModel", "fusionTuning"],
+        swarm: ["managerModel", "staffModel", "auditModel", "workerCount", "swarmTuning", "enableTelemetry"],
+        fallback: [],
+        "round-robin": [],
+      };
+      const keep = new Set(["fallbackStrategy", ...(ROLE_FIELDS[nextStrat] || [])]);
+      const next = {};
+      for (const [k, v] of Object.entries(merged)) {
+        if (keep.has(k)) next[k] = v;
+      }
+
+      const isDelete = !next.fallbackStrategy || next.fallbackStrategy === "fallback";
+      // null is the backend's delete-signal (see settingsRepo deep-merge).
+      const payload = { comboStrategies: { [comboName]: isDelete ? null : next } };
+
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      setComboStrategies((prev) => {
+        const updated = { ...prev };
+        if (isDelete) delete updated[comboName];
+        else updated[comboName] = next;
+        return updated;
+      });
+    } catch (error) {
+      console.log("Error updating combo strategy:", error);
+    }
   };
 
   if (loading) {

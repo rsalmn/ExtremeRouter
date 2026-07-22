@@ -6,10 +6,70 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { isBreakerBlocking } from "./circuitBreaker.js";
+import REGISTRY from "../providers/registry/index.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
 const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
+
+// Alias → provider id map (built once from the registry). Combo model strings
+// use the provider ALIAS as the prefix (e.g. "glm/glm-5", "gh/claude-opus"),
+// but the circuit breaker is keyed by provider ID. This map resolves the prefix
+// so we can ask the breaker about the right provider without crossing the
+// open-sse → src layer boundary.
+const ALIAS_TO_ID = new Map();
+for (const entry of REGISTRY) {
+  if (entry.alias) ALIAS_TO_ID.set(entry.alias, entry.id);
+  if (Array.isArray(entry.aliases)) {
+    for (const a of entry.aliases) ALIAS_TO_ID.set(a, entry.id);
+  }
+  // Also map id → id so a combo model already using the id prefix resolves.
+  ALIAS_TO_ID.set(entry.id, entry.id);
+}
+
+/**
+ * Pre-filter a combo's model list: drop models whose provider circuit breaker
+ * is currently OPEN (blocking traffic). This avoids a wasted credential-
+ * selection round-trip per broken model before the reactive fallback path
+ * would have skipped it anyway.
+ *
+ * Read-only: uses isBreakerBlocking (no probe-slot claiming), so it's safe to
+ * call without consuming the single HALF_OPEN probe allotment.
+ *
+ * If EVERY model is breaker-blocked, returns the original list unchanged —
+ * the lazy OPEN→HALF_OPEN transition inside isCircuitOpen may have fired by
+ * the time we actually attempt, so we don't hard-block a fully-depleted combo.
+ * The worst case is one extra failed attempt, which is strictly better than
+ * refusing to serve a request that could have succeeded.
+ *
+ * @param {string[]} models - combo model strings ("provider/model")
+ * @param {object} breakerSettings - settings object (reads settings.circuitBreaker)
+ * @returns {{ active: string[], skipped: string[] }}
+ */
+export function filterBreakerOpenModels(models, breakerSettings) {
+  if (!Array.isArray(models) || models.length <= 1) {
+    return { active: models || [], skipped: [] };
+  }
+  const active = [];
+  const skipped = [];
+  for (const m of models) {
+    const slash = typeof m === "string" ? m.indexOf("/") : -1;
+    const prefix = slash > 0 ? m.slice(0, slash) : "";
+    const providerId = prefix ? (ALIAS_TO_ID.get(prefix) || prefix) : "";
+    if (providerId && isBreakerBlocking(providerId, breakerSettings)) {
+      skipped.push(m);
+    } else {
+      active.push(m);
+    }
+  }
+  // Last-resort: if every model is blocked, return the original list. A probe
+  // window may open during the attempt, and one failed call beats a hard 503.
+  if (active.length === 0) {
+    return { active: models, skipped: [] };
+  }
+  return { active, skipped };
+}
 
 // Prefixes used when flattening tool turns into plain prose for panel models.
 const TOOL_CALL_PREFIX = "[Called tools: ";
@@ -129,7 +189,13 @@ export function detectRequiredCapabilities(body) {
   const contents = body.contents || body.request?.contents;                      // gemini / antigravity
   for (const c of trailingUserItems(contents)) scanContent(c.parts);
 
-  // search: temporarily disabled in auto-switch (feature not wired yet).
+  // Search capability detection is intentionally NOT implemented here. The
+  // tools array carries provider-specific search tool definitions whose shape
+  // varies across OpenAI/Claude/Gemini, and the combo auto-switch only needs
+  // to reorder for HARD input modalities (vision/pdf/audio/video). A model
+  // lacking search still answers — it just won't call the search tool — so
+  // there's no correctness reason to float search-capable models. Revisit if
+  // we ever want to prefer search-capable models for search-flagged requests.
 
   return required;
 }
@@ -163,10 +229,11 @@ export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
 
   const rotationKey = comboName || "__default__";
   const normalizedStickyLimit = normalizeStickyLimit(stickyLimit);
-  const existingState = comboRotationState.get(rotationKey);
-  const state = typeof existingState === "number"
-    ? { index: existingState, consecutiveUseCount: 0 }
-    : (existingState || { index: 0, consecutiveUseCount: 0 });
+  // State shape is always { index, consecutiveUseCount }. The previous version
+  // carried a legacy `typeof existingState === "number"` branch for an old
+  // on-disk format that was never persisted across restarts (comboRotationState
+  // is an in-memory Map) — dead code, removed.
+  const state = comboRotationState.get(rotationKey) || { index: 0, consecutiveUseCount: 0 };
 
   const currentIndex = state.index % models.length;
   const rotatedModels = rotateModelsFromIndex(models, currentIndex);
@@ -226,11 +293,24 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
  * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
+ * @param {Object} [options.breakerSettings] - Settings (reads circuitBreaker config) for proactive breaker pre-filter
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, breakerSettings = null }) {
   // Apply rotation strategy if enabled
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+
+  // Proactive breaker pre-filter: skip models whose provider circuit breaker
+  // is currently OPEN. This avoids a wasted credential-selection round-trip
+  // per broken model (the reactive fallback path would skip them anyway, but
+  // only after a failed attempt). Read-only check — does not claim probe slots.
+  if (breakerSettings) {
+    const { active, skipped } = filterBreakerOpenModels(rotatedModels, breakerSettings);
+    if (skipped.length > 0) {
+      log.info("COMBO", `breaker pre-filter: skipped ${skipped.length} open-breaker model(s) [${skipped.join(", ")}]`);
+      rotatedModels = active;
+    }
+  }
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
   if (autoSwitch) {
@@ -534,6 +614,9 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   log.info("FUSION", `fan-out collected in ${Date.now() - t0}ms`);
 
   // 2. Collect successful answers.
+  // We keep the original Response object alongside the extracted text so that
+  // the single-survivor path can return it directly without re-running the
+  // model (which would waste a second inference call + be non-deterministic).
   const answers = [];
   for (let i = 0; i < settled.length; i++) {
     const res = settled[i];
@@ -546,7 +629,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
       const json = await res.clone().json();
       const text = extractPanelText(json);
       if (text) {
-        answers.push({ model, text });
+        answers.push({ model, text, res });
         log.info("FUSION", `Panel ${model} ok (${text.length} chars)`);
       } else {
         log.warn("FUSION", `Panel ${model} returned empty content`);
@@ -565,8 +648,20 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
     );
   }
   if (answers.length === 1) {
-    log.info("FUSION", `Only ${answers[0].model} succeeded — answering directly (no fusion)`);
-    return handleSingleModel(body, answers[0].model);
+    // Single-survivor fallback. We already have a valid panel response, but it
+    // was forced to stream:false (the panel needs complete prose for judging).
+    // If the client requested streaming, returning that non-streaming response
+    // would silently downgrade SSE→JSON and break clients waiting on an event
+    // stream. In that case, re-invoke the survivor with the ORIGINAL body so
+    // the stream flag (and tools) are honored. For non-streaming requests we
+    // return the panel response directly — no point re-billing the same call.
+    const wantsStream = body?.stream === true;
+    if (wantsStream) {
+      log.info("FUSION", `Only ${answers[0].model} succeeded — re-running with stream:true to honor client SSE request (no fusion)`);
+      return handleSingleModel(body, answers[0].model);
+    }
+    log.info("FUSION", `Only ${answers[0].model} succeeded — returning its response directly (no fusion, no re-run)`);
+    return answers[0].res;
   }
 
   // 4. Judge analyzes + writes one final answer (streams to client if requested).

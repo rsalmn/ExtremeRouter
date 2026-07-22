@@ -13,6 +13,12 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const [showSwarmRoleSelect, setShowSwarmRoleSelect] = useState(null);
 
+  // M4 FIX: defensive default — combo.models can be undefined if the combos
+  // list was fetched mid-write or a row was hand-edited. ComboOverview guards
+  // with ?. but ComboCard previously crashed on .length/.slice/.map. Normalize
+  // once at the top so every downstream use is safe.
+  const models = Array.isArray(combo?.models) ? combo.models : [];
+
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
@@ -43,22 +49,22 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
             <div className="flex items-center gap-2">
               <code className="truncate font-mono text-sm font-medium">{combo.name}</code>
               <Badge variant={meta.badge} size="sm">{getStrategyLabel(current)}</Badge>
-              <span className="text-[10px] text-text-muted">{combo.models.length} models</span>
+              <span className="text-[10px] text-text-muted">{models.length} models</span>
             </div>
             {/* Model chips — first 3 + "+N more" */}
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
-              {combo.models.length === 0 ? (
+              {models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
               ) : (
-                combo.models.slice(0, 3).map((model, index) => (
+                models.slice(0, 3).map((model, index) => (
                   <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
                     <span className="truncate max-w-[120px]">{model}</span>
                     {modelCaps[model] && <CapacityBadges caps={modelCaps[model]} size={11} />}
                   </code>
                 ))
               )}
-              {combo.models.length > 3 && (
-                <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
+              {models.length > 3 && (
+                <span className="text-[10px] text-text-muted">+{models.length - 3} more</span>
               )}
             </div>
           </div>
@@ -104,9 +110,9 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
         <div className="mt-3 border-t border-border-subtle pt-3">
           {/* Full model list */}
           <div className="mb-3">
-            <p className="text-[10px] uppercase tracking-wide text-text-muted mb-1.5">Models ({combo.models.length})</p>
+            <p className="text-[10px] uppercase tracking-wide text-text-muted mb-1.5">Models ({models.length})</p>
             <div className="flex flex-col gap-1">
-              {combo.models.map((model, index) => (
+              {models.map((model, index) => (
                 <div key={index} className="flex items-center gap-2 rounded px-2 py-1 bg-black/[0.02] dark:bg-white/[0.02]">
                   <span className="text-[10px] font-medium text-text-muted w-4 text-center">{index + 1}</span>
                   <code className="min-w-0 flex-1 truncate font-mono text-xs text-text-main">{model}</code>
@@ -126,7 +132,7 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
                   className="inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-2 py-1 font-mono text-xs text-primary hover:border-primary hover:bg-primary/5"
                 >
                   <span className="material-symbols-outlined text-[14px]">gavel</span>
-                  <span className="truncate">{judge || `Auto — ${combo.models[0] || "first model"}`}</span>
+                  <span className="truncate">{judge || `Auto — ${models[0] || "first model"}`}</span>
                 </button>
                 {judge && (
                   <button onClick={() => onSetStrategy({ judgeModel: "" })} className="p-1 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10" title="Reset to Auto">
@@ -143,7 +149,7 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
               <p className="text-[10px] uppercase tracking-wide text-text-muted mb-1.5">Swarm Roles</p>
               <div className="flex flex-col gap-1.5">
                 {[
-                  { key: "manager", label: "Manager", icon: "psychology", value: swarmManager, placeholder: `Auto — ${combo.models[0] || "first"}` },
+                  { key: "manager", label: "Manager", icon: "psychology", value: swarmManager, placeholder: `Auto — ${models[0] || "first"}` },
                   { key: "staff", label: "Staff", icon: "badge", value: swarmStaff, placeholder: "Same as Manager" },
                   { key: "audit", label: "Audit", icon: "fact_check", value: swarmAudit, placeholder: "Same as Staff" },
                 ].map((role) => (
@@ -165,7 +171,7 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
                 ))}
                 <div className="flex items-center gap-2 text-[11px] text-text-muted">
                   <span className="font-medium">Workers</span>
-                  <span>= combo models ({combo.models.length})</span>
+                  <span>= combo models ({models.length})</span>
                   <span className="text-text-subtle">·</span>
                   <a href="/dashboard/swarm" className="text-primary hover:underline">Telemetry →</a>
                 </div>
@@ -199,7 +205,15 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
           onSelect={(m) => { onSetStrategy({ [`${showSwarmRoleSelect}Model`]: m?.value || "" }); setShowSwarmRoleSelect(null); }}
           activeProviders={activeProviders}
           title={`Select ${showSwarmRoleSelect === "manager" ? "Manager" : showSwarmRoleSelect === "staff" ? "Staff" : "Audit"} Model`}
-          addedModelValues={[]}
+          // L5 FIX: highlight the currently-selected model for this role so the
+          // user sees which one is already set (consistent with the judge picker
+          // above which passes `judge ? [judge] : []`). Previously this was []
+          // always, so no selection was ever shown.
+          addedModelValues={
+            showSwarmRoleSelect === "manager" ? (swarmManager ? [swarmManager] : [])
+            : showSwarmRoleSelect === "staff" ? (swarmStaff ? [swarmStaff] : [])
+            : (swarmAudit ? [swarmAudit] : [])
+          }
           closeOnSelect={true}
         />
       )}

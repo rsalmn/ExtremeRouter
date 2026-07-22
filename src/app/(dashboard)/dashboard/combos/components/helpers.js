@@ -96,8 +96,15 @@ export function getUniqueModels(combos) {
 // Compute strategy distribution for donut/bar chart.
 export function getStrategyDistribution(combos, comboStrategies) {
   const dist = { fallback: 0, "round-robin": 0, fusion: 0, swarm: 0 };
+  // L1 FIX: only the 4 known strategies get buckets. A typo'd/unknown value
+  // (e.g. "FUSION" uppercase persisted before M2 normalization) previously
+  // created a stray key that ComboOverview rendered as "Fallback" via the
+  // getStrategyMeta fallback — masking the misconfiguration. Now unknown
+  // values are bucketed under fallback explicitly.
+  const KNOWN = new Set(["fallback", "round-robin", "fusion", "swarm"]);
   for (const c of combos) {
-    const s = comboStrategies[c.name]?.fallbackStrategy || "fallback";
+    const raw = comboStrategies[c.name]?.fallbackStrategy || "fallback";
+    const s = KNOWN.has(raw) ? raw : "fallback";
     dist[s] = (dist[s] || 0) + 1;
   }
   return dist;

@@ -1,47 +1,38 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import PropTypes from "prop-types";
-import Link from "next/link";
-import { Card, Button, Badge, CardSkeleton, PageHeader, Modal, EmptyState } from "@/shared/components";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { Button, CardSkeleton, PageHeader, Modal, EmptyState } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import {
   FREE_PROVIDERS,
   FREE_TIER_PROVIDERS,
   WEB_COOKIE_PROVIDERS,
-  OPENAI_COMPATIBLE_PREFIX,
-  ANTHROPIC_COMPATIBLE_PREFIX,
 } from "@/shared/constants/providers";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import { useNewBadge } from "@/shared/hooks/useNewBadge";
 
-import ProviderCardV2 from "./components/ProviderCardV2";
-import ProviderSection from "./components/ProviderSection";
+import ProviderTile from "./components/ProviderTile";
+import ProviderKpis from "./components/ProviderKpis";
+import ProviderToolbar from "./components/ProviderToolbar";
 import ProviderTestResults from "./components/ProviderTestResults";
-import ProviderSummary from "./components/ProviderSummary";
 import AddCompatibleModal from "./components/AddCompatibleModal";
 import {
   makeGetProviderStats,
   makeMatchSearch,
   makeSortByPriority,
   resolveStatsAuthType,
-  getConnectionErrorTag,
 } from "./components/helpers";
 
 export default function ProvidersPage() {
   const [connections, setConnections] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showAllApikey, setShowAllApikey] = useState(false);
   const { isNew: isNewProvider, markSeen: markProviderSeen } = useNewBadge("providers");
 
-  // Collapsible sections
-  const [showCustom, setShowCustom] = useState(false);
-  const [showCookies, setShowCookies] = useState(false);
-  const [showOauth, setShowOauth] = useState(true);
-  const [showFree, setShowFree] = useState(true);
-  const [showApikey, setShowApikey] = useState(true);
+  // Unified filter + sort (replaces the old 6 section-collapse flags)
+  const [filter, setFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("priority");
 
   // Modals
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
@@ -50,7 +41,7 @@ export default function ProvidersPage() {
   // Test
   const [testingMode, setTestingMode] = useState(null);
   const [testResults, setTestResults] = useState(null);
-  const testingRef = useRef(false); // fix: race condition guard
+  const testingRef = useRef(false); // race-condition guard
 
   const notify = useNotificationStore();
   const searchQuery = useHeaderSearchStore((s) => s.query);
@@ -96,14 +87,12 @@ export default function ProvidersPage() {
   const sortByPriority = makeSortByPriority(getProviderStats);
 
   // ── Toggle provider ────────────────────────────────────────────────────────
-  // fix: compute matches inside setConnections updater to avoid snapshot drift
 
   const handleToggleProvider = useCallback((providerId, authType, newActive) => {
     const authTypes = Array.isArray(authType) ? authType : [authType];
     const matches = (c) => c.provider === providerId && authTypes.includes(c.authType);
     setConnections((prev) => {
       const toUpdate = prev.filter(matches);
-      // Fire PUT requests for the matched connections
       Promise.allSettled(
         toUpdate.map((c) =>
           fetch(`/api/providers/${c.id}`, {
@@ -118,7 +107,6 @@ export default function ProvidersPage() {
   }, []);
 
   // ── Batch test ─────────────────────────────────────────────────────────────
-  // fix: ref guard for race condition, refetch connections after test
 
   const handleBatchTest = useCallback(async (mode, providerId = null) => {
     if (testingRef.current) return;
@@ -138,7 +126,6 @@ export default function ProvidersPage() {
         if (failed === 0) notify.success(`All ${total} tests passed`);
         else notify.warning(`${passed}/${total} passed, ${failed} failed`);
       }
-      // fix: refetch so card badges reflect fresh test status
       fetchConnections();
     } catch {
       setTestResults({ error: "Test request failed" });
@@ -149,82 +136,227 @@ export default function ProvidersPage() {
     }
   }, [notify, fetchConnections]);
 
-  // ── Provider entries (filtered + sorted) ───────────────────────────────────
+  // ── Build unified provider list (all categories merged into one flat array)
+  //
+  // Each entry is normalized to a common shape tagged with `category` for
+  // filtering. This replaces the old 5 separate section arrays.
 
-  const compatibleProviders = providerNodes
-    .filter((n) => n.type === "openai-compatible")
-    .map((n) => ({ id: n.id, name: n.name || "OpenAI Compatible", color: "#10A37F", textIcon: "OC", apiType: n.apiType }))
-    .filter((p) => matchSearch(p.name, p.id));
+  const allEntries = useMemo(() => {
+    const entries = [];
 
-  const anthropicCompatibleProviders = providerNodes
-    .filter((n) => n.type === "anthropic-compatible")
-    .map((n) => ({ id: n.id, name: n.name || "Anthropic Compatible", color: "#D97757", textIcon: "AC" }))
-    .filter((p) => matchSearch(p.name, p.id));
+    // Custom (OpenAI/Anthropic compatible) from providerNodes
+    for (const node of providerNodes) {
+      const id = node.id;
+      const name = node.name || (node.type === "anthropic-compatible" ? "Anthropic Compatible" : "OpenAI Compatible");
+      if (!matchSearch(name, id)) continue;
+      entries.push({
+        id,
+        name,
+        color: node.type === "anthropic-compatible" ? "#D97757" : "#10A37F",
+        textIcon: node.type === "anthropic-compatible" ? "AC" : "OC",
+        apiType: node.apiType,
+        category: "custom",
+        priority: 999,
+        authTypes: "apikey",
+        stats: getProviderStats(id, "apikey"),
+        isNew: isNewProvider(id),
+        isNoAuth: false,
+        comingSoon: false,
+      });
+    }
 
-  const oauthEntries = sortByPriority(
-    Object.entries(OAUTH_PROVIDERS).filter(([, i]) => !i.hidden && matchSearch(i.name, i.id, i.alias)),
-    "oauth",
-  );
-  const freeEntries = Object.entries(FREE_PROVIDERS)
-    .filter(([, i]) => !i.hidden && matchSearch(i.name, i.id, i.alias))
-    .sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
-  const freeTierEntries = sortByPriority(
-    Object.entries(FREE_TIER_PROVIDERS).filter(([, i]) => !i.hidden && matchSearch(i.name, i.id, i.alias)),
-    "apikey",
-  );
-  const apikeyEntries = Object.entries(APIKEY_PROVIDERS)
-    .filter(([, i]) => !i.hidden && (i.serviceKinds ?? ["llm"]).includes("llm") && matchSearch(i.name, i.id, i.alias))
-    .sort(([ka, a], [kb, b]) => {
-      const ca = getProviderStats(ka, "apikey").total > 0 ? 0 : 1;
-      const cb = getProviderStats(kb, "apikey").total > 0 ? 0 : 1;
-      if (ca !== cb) return ca - cb;
-      return (a.name || "").localeCompare(b.name || "");
-    });
-  const cookieEntries = Object.entries(WEB_COOKIE_PROVIDERS)
-    .filter(([, i]) => !i.hidden && matchSearch(i.name, i.id, i.alias))
-    .sort(([ka, a], [kb, b]) => {
-      const ca = getProviderStats(ka, "cookie").total > 0 ? 0 : 1;
-      const cb = getProviderStats(kb, "cookie").total > 0 ? 0 : 1;
-      if (ca !== cb) return ca - cb;
-      return (a.name || "").localeCompare(b.name || "");
-    });
+    // OAuth providers
+    for (const [key, info] of Object.entries(OAUTH_PROVIDERS)) {
+      if (info.hidden) continue;
+      if (!matchSearch(info.name, info.id, info.alias)) continue;
+      const at = resolveStatsAuthType(info, "oauth");
+      entries.push({
+        id: key,
+        name: info.name,
+        color: info.color,
+        textIcon: info.textIcon,
+        category: "oauth",
+        priority: info.priority ?? 100,
+        authTypes: at,
+        stats: getProviderStats(key, at),
+        isNew: isNewProvider(key),
+        isNoAuth: false,
+        comingSoon: !!info.comingSoon,
+      });
+    }
 
-  const isApikeySearching = isSearching;
-  const visibleApikeyEntries = isApikeySearching || showAllApikey ? apikeyEntries : apikeyEntries.slice(0, 20);
+    // Free providers (no-auth + free-tier)
+    for (const [key, info] of Object.entries(FREE_PROVIDERS)) {
+      if (info.hidden) continue;
+      if (!matchSearch(info.name, info.id, info.alias)) continue;
+      const freeAuthTypes = key === "kiro" ? ["oauth", "apikey", "api_key"] : "oauth";
+      entries.push({
+        id: key,
+        name: info.name,
+        color: info.color,
+        textIcon: info.textIcon,
+        category: "free",
+        priority: info.priority ?? 200,
+        authTypes: freeAuthTypes,
+        stats: getProviderStats(key, freeAuthTypes),
+        isNew: isNewProvider(key),
+        isNoAuth: !!info.noAuth,
+        comingSoon: !!info.comingSoon,
+      });
+    }
 
-  // ── Summary stats ──────────────────────────────────────────────────────────
+    for (const [key, info] of Object.entries(FREE_TIER_PROVIDERS)) {
+      if (info.hidden) continue;
+      if (!matchSearch(info.name, info.id, info.alias)) continue;
+      entries.push({
+        id: key,
+        name: info.name,
+        color: info.color,
+        textIcon: info.textIcon,
+        category: "free",
+        priority: info.priority ?? 210,
+        authTypes: "apikey",
+        stats: getProviderStats(key, "apikey"),
+        isNew: isNewProvider(key),
+        isNoAuth: !!info.noAuth,
+        comingSoon: !!info.comingSoon,
+      });
+    }
 
-  const totalProviders = oauthEntries.length + freeEntries.length + freeTierEntries.length + apikeyEntries.length + cookieEntries.length;
-  const allProviderIds = [...oauthEntries, ...freeEntries, ...freeTierEntries, ...apikeyEntries, ...cookieEntries].map(([k]) => k);
-  const connectedCount = allProviderIds.filter((id) => {
-    const info = OAUTH_PROVIDERS[id] || APIKEY_PROVIDERS[id] || FREE_PROVIDERS[id] || FREE_TIER_PROVIDERS[id] || WEB_COOKIE_PROVIDERS[id];
-    const at = resolveStatsAuthType(info, info?.authType || "apikey");
-    return getProviderStats(id, at).connected > 0;
-  }).length;
-  const errorCount = allProviderIds.filter((id) => {
-    const info = OAUTH_PROVIDERS[id] || APIKEY_PROVIDERS[id] || FREE_PROVIDERS[id] || FREE_TIER_PROVIDERS[id] || WEB_COOKIE_PROVIDERS[id];
-    const at = resolveStatsAuthType(info, info?.authType || "apikey");
-    return getProviderStats(id, at).error > 0;
-  }).length;
+    // API Key providers (LLM only)
+    for (const [key, info] of Object.entries(APIKEY_PROVIDERS)) {
+      if (info.hidden) continue;
+      if (!(info.serviceKinds ?? ["llm"]).includes("llm")) continue;
+      if (!matchSearch(info.name, info.id, info.alias)) continue;
+      entries.push({
+        id: key,
+        name: info.name,
+        color: info.color,
+        textIcon: info.textIcon,
+        category: "apikey",
+        priority: info.priority ?? 300,
+        authTypes: "apikey",
+        stats: getProviderStats(key, "apikey"),
+        isNew: isNewProvider(key),
+        isNoAuth: !!info.noAuth,
+        comingSoon: !!info.comingSoon,
+      });
+    }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+    // Cookie providers
+    for (const [key, info] of Object.entries(WEB_COOKIE_PROVIDERS)) {
+      if (info.hidden) continue;
+      if (!matchSearch(info.name, info.id, info.alias)) continue;
+      entries.push({
+        id: key,
+        name: info.name,
+        color: info.color,
+        textIcon: info.textIcon,
+        category: "cookie",
+        priority: info.priority ?? 400,
+        authTypes: "cookie",
+        stats: getProviderStats(key, "cookie"),
+        isNew: isNewProvider(key),
+        isNoAuth: !!info.noAuth,
+        comingSoon: !!info.comingSoon,
+      });
+    }
+
+    return entries;
+  }, [providerNodes, connections, searchQuery, isNewProvider]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── KPI counts ─────────────────────────────────────────────────────────────
+
+  const kpiCounts = useMemo(() => {
+    let connected = 0;
+    let errors = 0;
+    let ready = 0;
+    for (const e of allEntries) {
+      if (e.stats.connected > 0) connected++;
+      if (e.stats.error > 0) errors++;
+      if (e.isNoAuth && e.stats.connected === 0 && e.stats.error === 0) ready++;
+      if (!e.isNoAuth && e.stats.connected === 0 && e.stats.error === 0 && e.stats.total === 0) ready++;
+    }
+    return {
+      total: allEntries.length,
+      connected,
+      errors,
+      ready,
+    };
+  }, [allEntries]);
+
+  // ── Filter counts (for chip badges) ─────────────────────────────────────────
+
+  const filterCounts = useMemo(() => {
+    const c = { all: allEntries.length, connected: 0, errors: 0, oauth: 0, apikey: 0, free: 0, cookie: 0, custom: 0 };
+    for (const e of allEntries) {
+      if (e.stats.connected > 0) c.connected++;
+      if (e.stats.error > 0) c.errors++;
+      c[e.category]++;
+    }
+    return c;
+  }, [allEntries]);
+
+  // ── Apply filter + sort ─────────────────────────────────────────────────────
+
+  const visibleEntries = useMemo(() => {
+    let list = allEntries;
+
+    // Category / status filter
+    if (filter !== "all") {
+      if (filter === "connected") {
+        list = list.filter((e) => e.stats.connected > 0);
+      } else if (filter === "errors") {
+        list = list.filter((e) => e.stats.error > 0);
+      } else {
+        list = list.filter((e) => e.category === filter);
+      }
+    }
+
+    // Sort
+    const sorted = [...list];
+    if (sortBy === "name") {
+      sorted.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    } else if (sortBy === "connections") {
+      // Connected first (desc), then by total (desc), then alphabetical
+      sorted.sort((a, b) => {
+        const ac = a.stats.connected > 0 ? 0 : 1;
+        const bc = b.stats.connected > 0 ? 0 : 1;
+        if (ac !== bc) return ac - bc;
+        return (b.stats.total || 0) - (a.stats.total || 0) || (a.name || "").localeCompare(b.name || "");
+      });
+    } else {
+      // priority (default): connected-first, then by registry priority, then alpha
+      sorted.sort((a, b) => {
+        const ac = a.stats.total > 0 ? 0 : 1;
+        const bc = b.stats.total > 0 ? 0 : 1;
+        if (ac !== bc) return ac - bc;
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        return (a.name || "").localeCompare(b.name || "");
+      });
+    }
+
+    return sorted;
+  }, [allEntries, filter, sortBy]);
+
+  // ── Loading ────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-6">
         <CardSkeleton />
         <CardSkeleton />
       </div>
     );
   }
 
-  const hasAnyResult =
-    compatibleProviders.length > 0 || anthropicCompatibleProviders.length > 0 ||
-    oauthEntries.length > 0 || freeEntries.length > 0 || freeTierEntries.length > 0 ||
-    apikeyEntries.length > 0 || cookieEntries.length > 0;
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  const showSearchEmpty = isSearching && visibleEntries.length === 0;
+  const showNoProviders = !isSearching && allEntries.length === 0;
 
   return (
-    <div className="flex min-w-0 flex-col gap-6">
+    <div className="flex min-w-0 flex-col gap-5">
       <PageHeader
         title="Providers"
         description="Connect, configure, and manage AI providers"
@@ -237,177 +369,78 @@ export default function ProvidersPage() {
         }
       />
 
-      {/* Summary band */}
-      <ProviderSummary
-        totalProviders={totalProviders}
-        connectedProviders={connectedCount}
-        errorCount={errorCount}
-        onTestAll={() => handleBatchTest("all")}
-        testingMode={testingMode}
+      {/* KPI row */}
+      <ProviderKpis
+        counts={kpiCounts}
+        activeFilter={filter}
+        onFilter={setFilter}
       />
 
-      {/* Search no-results */}
-      {isSearching && !hasAnyResult && (
-        <EmptyState
-          icon="search_off"
-          title={`No providers match "${searchQuery}"`}
-          description="Try a different search term, or browse the sections below."
+      {/* Global Test All — inline button, shown when there are connections */}
+      {kpiCounts.connected > 0 && (
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            variant="outline"
+            icon={testingMode === "all" ? "progress_activity" : "bolt"}
+            onClick={() => handleBatchTest("all")}
+            disabled={!!testingMode}
+            className={testingMode === "all" ? "animate-pulse" : ""}
+          >
+            {testingMode === "all" ? "Testing All..." : "Test All Providers"}
+          </Button>
+        </div>
+      )}
+
+      {/* Filter + sort toolbar */}
+      {!showNoProviders && (
+        <ProviderToolbar
+          filter={filter}
+          onFilter={setFilter}
+          sortBy={sortBy}
+          onSort={setSortBy}
+          counts={filterCounts}
+          total={allEntries.length}
+          isSearching={isSearching}
         />
       )}
 
-      {/* Custom Providers */}
-      <ProviderSection
-        title="Custom Providers (OpenAI/Anthropic Compatible)"
-        icon="extension"
-        count={compatibleProviders.length + anthropicCompatibleProviders.length}
-        isExpanded={showCustom}
-        onToggle={() => setShowCustom((v) => !v)}
-        isSearching={isSearching}
-        hasContent={compatibleProviders.length > 0 || anthropicCompatibleProviders.length > 0}
-        emptyTitle="No custom providers"
-        emptyDescription="Add OpenAI or Anthropic compatible endpoints to get started."
-      >
-        <Button size="sm" icon="add" onClick={() => setShowAddAnthropicCompatibleModal(true)}>Add Anthropic</Button>
-        <Button size="sm" variant="secondary" icon="add" onClick={() => setShowAddCompatibleModal(true)}>Add OpenAI</Button>
-        {[...compatibleProviders, ...anthropicCompatibleProviders].map((info) => (
-          <ProviderCardV2
-            key={info.id}
-            providerId={info.id}
-            provider={info}
-            stats={getProviderStats(info.id, "apikey")}
-            isNew={isNewProvider(info.id)}
-            onToggle={(active) => handleToggleProvider(info.id, "apikey", active)}
-          />
-        ))}
-      </ProviderSection>
+      {/* Empty states */}
+      {showSearchEmpty && (
+        <EmptyState
+          icon="search_off"
+          title={`No providers match "${searchQuery}"`}
+          description="Try a different search term or clear the filters."
+        />
+      )}
 
-      {/* Cookies Provider */}
-      <ProviderSection
-        title="Cookies Provider"
-        icon="cookie"
-        count={cookieEntries.length}
-        isExpanded={showCookies}
-        onToggle={() => setShowCookies((v) => !v)}
-        isSearching={isSearching}
-        onTestAll={() => handleBatchTest("cookie")}
-        testingMode={testingMode}
-        testModeKey="cookie"
-        hasContent={cookieEntries.length > 0}
-      >
-        {cookieEntries.map(([key, info]) => (
-          <ProviderCardV2
-            key={key}
-            providerId={key}
-            provider={info}
-            stats={getProviderStats(key, "cookie")}
-            isNoAuth={!!info.noAuth}
-            isNew={isNewProvider(key)}
-            onToggle={(active) => handleToggleProvider(key, "cookie", active)}
-          />
-        ))}
-      </ProviderSection>
+      {showNoProviders && (
+        <EmptyState
+          icon="cloud_off"
+          title="No providers yet"
+          description="Add your first provider to start routing requests."
+        />
+      )}
 
-      {/* OAuth Providers */}
-      <ProviderSection
-        title="OAuth Providers"
-        icon="lock"
-        count={oauthEntries.length}
-        isExpanded={showOauth}
-        onToggle={() => setShowOauth((v) => !v)}
-        isSearching={isSearching}
-        onTestAll={() => handleBatchTest("oauth")}
-        testingMode={testingMode}
-        testModeKey="oauth"
-        hasContent={oauthEntries.length > 0}
-      >
-        {oauthEntries.map(([key, info]) => {
-          const at = resolveStatsAuthType(info, "oauth");
-          return (
-            <ProviderCardV2
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, at)}
-              comingSoon={!!info.comingSoon}
-              isNew={isNewProvider(key)}
-              onToggle={(active) => handleToggleProvider(key, at, active)}
+      {/* Provider grid */}
+      {visibleEntries.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {visibleEntries.map((entry) => (
+            <ProviderTile
+              key={entry.id}
+              providerId={entry.id}
+              provider={entry}
+              stats={entry.stats}
+              isNoAuth={entry.isNoAuth}
+              comingSoon={entry.comingSoon}
+              isNew={entry.isNew}
+              testing={testingMode === entry.id}
+              onToggle={(active) => handleToggleProvider(entry.id, entry.authTypes, active)}
+              onTest={(pid) => handleBatchTest("provider", pid)}
             />
-          );
-        })}
-      </ProviderSection>
-
-      {/* Free Tier Providers */}
-      <ProviderSection
-        title="Free Tier Providers"
-        icon="redeem"
-        count={freeEntries.length + freeTierEntries.length}
-        isExpanded={showFree}
-        onToggle={() => setShowFree((v) => !v)}
-        isSearching={isSearching}
-        onTestAll={() => handleBatchTest("free")}
-        testingMode={testingMode}
-        testModeKey="free"
-        hasContent={freeEntries.length > 0 || freeTierEntries.length > 0}
-      >
-        {freeEntries.map(([key, info]) => {
-          const freeAuthTypes = key === "kiro" ? ["oauth", "apikey", "api_key"] : "oauth";
-          return (
-            <ProviderCardV2
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, freeAuthTypes)}
-              isNoAuth={!!info.noAuth}
-              isNew={isNewProvider(key)}
-              onToggle={(active) => handleToggleProvider(key, freeAuthTypes, active)}
-            />
-          );
-        })}
-        {freeTierEntries.map(([key, info]) => (
-          <ProviderCardV2
-            key={key}
-            providerId={key}
-            provider={info}
-            stats={getProviderStats(key, "apikey")}
-            isNew={isNewProvider(key)}
-            onToggle={(active) => handleToggleProvider(key, "apikey", active)}
-          />
-        ))}
-      </ProviderSection>
-
-      {/* API Key Providers */}
-      <ProviderSection
-        title="API Key Providers"
-        icon="key"
-        count={apikeyEntries.length}
-        isExpanded={showApikey}
-        onToggle={() => setShowApikey((v) => !v)}
-        isSearching={isSearching}
-        onTestAll={() => handleBatchTest("apikey")}
-        testingMode={testingMode}
-        testModeKey="apikey"
-        hasContent={apikeyEntries.length > 0}
-      >
-        {visibleApikeyEntries.map(([key, info]) => (
-          <ProviderCardV2
-            key={key}
-            providerId={key}
-            provider={info}
-            stats={getProviderStats(key, "apikey")}
-            isNew={isNewProvider(key)}
-            onToggle={(active) => handleToggleProvider(key, "apikey", active)}
-          />
-        ))}
-        {!isApikeySearching && !showAllApikey && apikeyEntries.length > 20 && (
-          <button
-            onClick={() => setShowAllApikey(true)}
-            className="flex w-full items-center justify-center gap-1.5 rounded-brand border border-dashed border-primary/40 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:border-primary hover:bg-primary/5"
-          >
-            <span className="material-symbols-outlined text-[16px]">expand_more</span>
-            Show all {apikeyEntries.length} providers
-          </button>
-        )}
-      </ProviderSection>
+          ))}
+        </div>
+      )}
 
       {/* Test Results Modal */}
       {testResults && (

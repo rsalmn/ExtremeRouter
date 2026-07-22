@@ -161,16 +161,49 @@ function parseStrategy(text) {
   if (!text) return null;
   // Strip markdown fences if present.
   const cleaned = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
-  // Find the outermost JSON object.
+
+  // Attempt 1: full strict JSON parse of the outermost object.
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
-  if (start === -1 || end === -1) return null;
-  try {
-    const obj = JSON.parse(cleaned.slice(start, end + 1));
-    if (Array.isArray(obj.subtasks) && obj.subtasks.length > 0) return obj;
-  } catch {
-    // fall through
+  if (start !== -1 && end !== -1 && end > start) {
+    try {
+      const obj = JSON.parse(cleaned.slice(start, end + 1));
+      if (Array.isArray(obj.subtasks) && obj.subtasks.length > 0) return obj;
+    } catch {
+      // fall through to lenient recovery
+    }
   }
+
+  // Attempt 2: lenient recovery for truncated JSON. Reasoning models that hit
+  // max_tokens mid-output produce a strategy whose trailing braces are missing,
+  // so the strict parse above fails. Salvage whatever complete subtask objects
+  // already landed on the wire: scan for each {...} block containing an "id"
+  // field and reconstruct a partial strategy. Partial is strictly better than
+  // discarding the Manager's decomposition and falling back to a direct answer
+  // (which abandons the whole swarm pipeline).
+  const subtaskBlocks = [];
+  const blockRe = /\{[^{}]*?"id"\s*:\s*\d+[^{}]*?\}/gs;
+  let match;
+  while ((match = blockRe.exec(cleaned)) !== null) {
+    const blockText = match[0];
+    try {
+      const parsed = JSON.parse(blockText);
+      if (parsed && (parsed.title || parsed.instruction || parsed.role)) {
+        subtaskBlocks.push({
+          id: typeof parsed.id === "number" ? parsed.id : subtaskBlocks.length + 1,
+          title: parsed.title || `Subtask ${subtaskBlocks.length + 1}`,
+          role: parsed.role || "default",
+          instruction: parsed.instruction || parsed.title || "",
+        });
+      }
+    } catch {
+      // skip unparseable individual block
+    }
+  }
+  if (subtaskBlocks.length > 0) {
+    return { assessment: "(recovered from truncated output)", subtasks: subtaskBlocks };
+  }
+
   return null;
 }
 
@@ -234,7 +267,7 @@ async function runManagerStrategy({ runId, body, managerModel, handleSingleModel
   }
 }
 
-async function dispatchWorkers({ runId, strategy, models, handleSingleModel, cfg, log }) {
+async function dispatchWorkers({ runId, strategy, models, body, handleSingleModel, cfg, log }) {
   markStageStart(runId, "workers", { workerCount: strategy.subtasks.length });
   const subtasks = strategy.subtasks;
   const workerModels = models.filter(Boolean);
@@ -244,10 +277,13 @@ async function dispatchWorkers({ runId, strategy, models, handleSingleModel, cfg
   }
 
   // Assign each subtask to a worker model (round-robin across available combo models).
+  // `body` is threaded explicitly (NOT via module-level ref) to be safe under
+  // concurrent swarm requests — a module-level ref would let two in-flight
+  // requests clobber each other's prompt (cross-request leak + wrong output).
   const calls = subtasks.map((subtask, i) => {
     const workerModel = workerModels[i % workerModels.length];
     // Workers get FULL unsanitized context (no IDE strip) + specialist directive as user turn.
-    const workerBody = appendUserTurn(buildPanelBody(body_global), buildWorkerDirective(subtask));
+    const workerBody = appendUserTurn(buildPanelBody(body), buildWorkerDirective(subtask));
     markWorkerStatus(runId, i, "running", { model: workerModel });
     return withTimeout(handleSingleModel(workerBody, workerModel, true), cfg.workerHardTimeoutMs)
       .then(async (res) => {
@@ -280,7 +316,7 @@ async function dispatchWorkers({ runId, strategy, models, handleSingleModel, cfg
   return outputs;
 }
 
-async function runStaffAudit({ runId, strategy, workerOutputs, staffModel, auditModel, handleSingleModel, cfg, log }) {
+async function runStaffAudit({ runId, strategy, workerOutputs, staffModel, auditModel, body, handleSingleModel, cfg, log }) {
   const model = staffModel || auditModel;
   if (!model) {
     markStageDone(runId, "audit", { skipped: true });
@@ -291,7 +327,7 @@ async function runStaffAudit({ runId, strategy, workerOutputs, staffModel, audit
     const match = workerOutputs.find((w) => w.subtask?.id === st.id);
     return { ...st, output: match?.text || "(no output)" };
   });
-  const auditBody = stripIdeSystemPrompt(buildPanelBody(body_global));
+  const auditBody = stripIdeSystemPrompt(buildPanelBody(body));
   const directiveBody = appendUserTurn(auditBody, buildStaffAuditPrompt(subtasksWithOutputs, workerOutputs.map((w) => w.text)));
 
   try {
@@ -310,10 +346,10 @@ async function runStaffAudit({ runId, strategy, workerOutputs, staffModel, audit
   }
 }
 
-// Body is threaded via a module-level ref because dispatchWorkers is invoked
-// as a map callback and can't easily take extra args without changing the
-// collectPanel contract. Set before fan-out, cleared after.
-let body_global = null;
+// NOTE: `body` is threaded explicitly through every stage runner (not via a
+// module-level ref). A module-level ref would be unsafe under concurrent swarm
+// requests in the same process — two in-flight runs would clobber each other's
+// prompt, leaking one user's content into the other's workers.
 
 // ── Main entry ────────────────────────────────────────────────────────────
 
@@ -349,7 +385,6 @@ export async function handleSwarmChat({
     return handleSingleModel(body, panel[0]);
   }
 
-  body_global = body;
   const run = telemetry
     ? createSwarmRun({
         comboName,
@@ -372,7 +407,6 @@ export async function handleSwarmChat({
       // Manager answers directly, streaming to client (original body preserved).
       log?.info?.("SWARM", "Gatekeeper bypass — simple request, direct answer");
       if (runId) markRunComplete(runId, { bypassed: true });
-      body_global = null;
       return handleSingleModel(body, manager);
     }
 
@@ -385,23 +419,25 @@ export async function handleSwarmChat({
       // Strategy parse failed → fall back to direct answer.
       log?.warn?.("SWARM", "Strategy decomposition failed — falling back to direct answer");
       if (runId) markRunComplete(runId, { fallback: true });
-      body_global = null;
       return handleSingleModel(body, manager);
     }
 
-    // Clamp worker count.
-    const effectiveSubtasks = strategy.subtasks.slice(0, cfg.maxWorkers);
+    // Clamp worker count: honor per-combo workerCount if set, else fall back to
+    // maxWorkers safety cap. This makes the UI's worker count field effective.
+    const workerCap = (typeof workerCount === "number" && workerCount > 0)
+      ? Math.min(workerCount, cfg.maxWorkers)
+      : cfg.maxWorkers;
+    const effectiveSubtasks = strategy.subtasks.slice(0, workerCap);
 
     // ── Stage 2+3: Dispatch Workers (parallel) ──
     const workerOutputs = telemetry
-      ? await dispatchWorkers({ runId, strategy: { subtasks: effectiveSubtasks }, models: panel, handleSingleModel, cfg, log })
-      : (await dispatchWorkersNoTelemetry({ strategy: { subtasks: effectiveSubtasks }, models: panel, handleSingleModel, cfg, log }));
+      ? await dispatchWorkers({ runId, strategy: { subtasks: effectiveSubtasks }, models: panel, body, handleSingleModel, cfg, log })
+      : (await dispatchWorkersNoTelemetry({ strategy: { subtasks: effectiveSubtasks }, models: panel, body, handleSingleModel, cfg, log }));
 
     if (workerOutputs.length < cfg.minWorkers) {
       // Too few workers succeeded → fall back to direct answer from best worker or manager.
       log?.warn?.("SWARM", `Only ${workerOutputs.length}/${effectiveSubtasks.length} workers succeeded — fallback`);
       if (runId) markRunComplete(runId, { fallback: true });
-      body_global = null;
       if (workerOutputs.length === 1) {
         // Return the single worker's output directly.
         return handleSingleModel(appendUserTurn(body, "The specialist worker produced this answer. Output it verbatim to the user."), manager);
@@ -411,8 +447,8 @@ export async function handleSwarmChat({
 
     // ── Stage 4: Staff Audit ──
     const auditReport = telemetry
-      ? await runStaffAudit({ runId, strategy: { subtasks: effectiveSubtasks }, workerOutputs, staffModel, auditModel, handleSingleModel, cfg, log })
-      : (await runStaffAuditNoTelemetry({ strategy: { subtasks: effectiveSubtasks }, workerOutputs, staffModel, auditModel, handleSingleModel, cfg, log }));
+      ? await runStaffAudit({ runId, strategy: { subtasks: effectiveSubtasks }, workerOutputs, staffModel, auditModel, body, handleSingleModel, cfg, log })
+      : (await runStaffAuditNoTelemetry({ strategy: { subtasks: effectiveSubtasks }, workerOutputs, staffModel, auditModel, body, handleSingleModel, cfg, log }));
 
     // ── Stage 5: Manager Synthesis (STREAMED to client) ──
     const synthesisDirective = auditReport
@@ -429,16 +465,13 @@ export async function handleSwarmChat({
       const res = await handleSingleModel(synthBody, manager);
       markStageDone(runId, "synthesis");
       markRunComplete(runId, { workerCount: workerOutputs.length });
-      body_global = null;
       return res;
     }
 
-    body_global = null;
     return handleSingleModel(synthBody, manager);
   } catch (e) {
     log?.error?.("SWARM", `Swarm failed: ${e?.message || e}`);
     if (runId) markRunError(runId, e);
-    body_global = null;
     // Graceful degradation: fall back to direct answer on any uncaught error.
     return handleSingleModel(body, manager);
   }
@@ -473,12 +506,12 @@ async function runManagerStrategyNoTelemetry({ body, managerModel, handleSingleM
   }
 }
 
-async function dispatchWorkersNoTelemetry({ strategy, models, handleSingleModel, cfg }) {
+async function dispatchWorkersNoTelemetry({ strategy, models, body, handleSingleModel, cfg }) {
   const workerModels = models.filter(Boolean);
   if (workerModels.length === 0) return [];
   const calls = strategy.subtasks.map((subtask, i) => {
     const workerModel = workerModels[i % workerModels.length];
-    const workerBody = appendUserTurn(buildPanelBody(body_global), buildWorkerDirective(subtask));
+    const workerBody = appendUserTurn(buildPanelBody(body), buildWorkerDirective(subtask));
     return withTimeout(handleSingleModel(workerBody, workerModel, true), cfg.workerHardTimeoutMs);
   });
   const settled = await collectPanel(calls, {
@@ -497,14 +530,14 @@ async function dispatchWorkersNoTelemetry({ strategy, models, handleSingleModel,
   return outputs;
 }
 
-async function runStaffAuditNoTelemetry({ strategy, workerOutputs, staffModel, auditModel, handleSingleModel, cfg }) {
+async function runStaffAuditNoTelemetry({ strategy, workerOutputs, staffModel, auditModel, body, handleSingleModel, cfg }) {
   const model = staffModel || auditModel;
   if (!model) return null;
   const subtasksWithOutputs = strategy.subtasks.map((st, i) => {
     const match = workerOutputs.find((w) => w.subtask?.id === st.id);
     return { ...st, output: match?.text || "(no output)" };
   });
-  const auditBody = stripIdeSystemPrompt(buildPanelBody(body_global));
+  const auditBody = stripIdeSystemPrompt(buildPanelBody(body));
   const directiveBody = appendUserTurn(auditBody, buildStaffAuditPrompt(subtasksWithOutputs, workerOutputs.map((w) => w.text)));
   try {
     const res = await withTimeout(handleSingleModel(directiveBody, model, true), cfg.managerTimeoutMs);

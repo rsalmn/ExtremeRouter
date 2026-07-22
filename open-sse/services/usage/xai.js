@@ -21,26 +21,20 @@
 // Reference: github.com/decolua/9router PR #2672 (original implementation
 // against the now-defunct endpoints).
 
-import { U } from "./shared.js";
-
-// Kept for forward-compatibility: if a Management API key is ever wired up
+// Forward-compat hook: if a Management API key is ever wired up
 // (providerSpecificData.mgmtKey, mirroring TokenRouter), this handler can be
 // re-enabled against https://management-api.x.ai/billing without touching the
 // registration in services/usage.js.
 export async function getXaiUsage(credentials, _proxyOptions = null) {
-  // Sanity reference — confirms the provider config still exists. Intentionally
-  // unused for network calls while the handler is in the informational state.
-  void U;
-
   const hasMgmtKey = Boolean(
     credentials?.providerSpecificData?.mgmtKey ||
       credentials?.providerDataWithProjectId?.mgmtKey
   );
 
   if (hasMgmtKey) {
-    // Forward-compat hook: if a Management Key is present we still cannot reach
-    // a documented billing endpoint today, but we acknowledge the credential
-    // so the message can guide the user.
+    // If a Management Key is present we still cannot reach a documented billing
+    // endpoint today, but we acknowledge the credential so the message can
+    // guide the user.
     return {
       quotas: {},
       plan: null,
