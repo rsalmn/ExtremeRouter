@@ -114,6 +114,27 @@ export async function updateSettings(updates) {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const current = row ? parseJson(row.data, {}) : {};
     next = { ...current, ...updates };
+
+    // Deep-merge `comboStrategies`: it is a map keyed by combo name where each
+    // entry holds per-combo config (fallbackStrategy/judgeModel/managerModel/
+    // fusionTuning/swarmTuning). A shallow top-level merge would let one
+    // writer's full snapshot clobber every other combo's entry — a classic
+    // lost-update race when two browser tabs edit different combos. Merge at
+    // the combo-name level instead: incoming entries win, others are preserved.
+    // Deletions are signalled by sending `{ [comboName]: null }`.
+    if (updates && typeof updates.comboStrategies === "object" && !Array.isArray(updates.comboStrategies)) {
+      const baseCs = (current.comboStrategies && typeof current.comboStrategies === "object") ? current.comboStrategies : {};
+      const mergedCs = { ...baseCs };
+      for (const [name, entry] of Object.entries(updates.comboStrategies)) {
+        if (entry === null) {
+          delete mergedCs[name];
+        } else {
+          mergedCs[name] = { ...(mergedCs[name] || {}), ...(entry || {}) };
+        }
+      }
+      next.comboStrategies = mergedCs;
+    }
+
     db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
       [stringifyJson(next)]

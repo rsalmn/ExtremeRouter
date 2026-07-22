@@ -27,6 +27,18 @@ import { recordBreakerSuccess, recordBreakerFailure, isRetryableFailure, release
 import { recordHealthSample } from "open-sse/services/healthMonitor.js";
 import { getApiKeyByKey } from "@/lib/localDb";
 
+// M2 FIX: normalize a combo strategy string to a known value. Accepts case
+// variants + surrounding whitespace ("FUSION", "Round-Robin ", " Swarm ") and
+// maps unknown values to "fallback" so a typo or client-injected junk never
+// silently mis-dispatches. The previous exact-case compares meant "FUSION"
+// fell through to handleComboChat as plain fallback with no indication.
+const KNOWN_STRATEGIES = new Set(["fallback", "round-robin", "fusion", "swarm"]);
+function normalizeStrategy(raw) {
+  if (typeof raw !== "string") return "fallback";
+  const s = raw.trim().toLowerCase();
+  return KNOWN_STRATEGIES.has(s) ? s : "fallback";
+}
+
 /**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
@@ -160,7 +172,7 @@ export async function handleChat(request, clientRawRequest = null) {
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-    const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
+    const comboStrategy = normalizeStrategy(comboSpecificStrategy || settings.comboStrategy || "fallback");
 
     if (comboStrategy === "fusion") {
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
@@ -173,7 +185,7 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, { skipBreaker: isPanel });
         },
         log,
         comboName: modelStr,
@@ -182,7 +194,7 @@ export async function handleChat(request, clientRawRequest = null) {
       });
     }
 
-    const comboStickyLimit = settings.comboStickyLimit;
+    const comboStickyLimit = settings.comboStickyRoundRobinLimit;
     if (comboStrategy === "swarm") {
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: swarm)`);
       const swarmCfg = comboStrategies[modelStr] || {};
@@ -195,7 +207,7 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, { skipBreaker: isPanel });
         },
         log,
         comboName: modelStr,
@@ -216,7 +228,8 @@ export async function handleChat(request, clientRawRequest = null) {
       log,
       comboName: modelStr,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
+      breakerSettings: settings,
     });
   }
 
@@ -227,7 +240,7 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, opts = {}) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -238,7 +251,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-      const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
+      const comboStrategy = normalizeStrategy(comboSpecificStrategy || chatSettings.comboStrategy || "fallback");
 
       if (comboStrategy === "fusion") {
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
@@ -251,7 +264,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, { skipBreaker: isPanel });
           },
           log,
           comboName: modelStr,
@@ -273,7 +286,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, { skipBreaker: isPanel });
           },
           log,
           comboName: modelStr,
@@ -294,7 +307,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         log,
         comboName: modelStr,
         comboStrategy,
-        comboStickyLimit
+        comboStickyLimit,
+        breakerSettings: chatSettings,
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
@@ -403,7 +417,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     if (result.success) {
       const latencyMs = Date.now() - attemptStart;
-      recordBreakerSuccess(provider, chatSettings);
+      // M6 FIX: panel calls (fusion/swarm fan-out) share the per-provider
+      // breaker with non-combo traffic. Recording failures here would let a
+      // flaky panel model trip the breaker and block single-model requests
+      // to the same provider. skipBreaker isolates panel outcomes so only the
+      // final user-facing call (judge/synthesis/direct) affects breaker state.
+      if (!opts.skipBreaker) recordBreakerSuccess(provider, chatSettings);
       recordHealthSample(provider, { success: true, latencyMs }, chatSettings);
       return result.response;
     }
@@ -417,7 +436,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Record health + circuit breaker for retryable failures only.
     const latencyMs = Date.now() - attemptStart;
     recordHealthSample(provider, { success: false, latencyMs, status: result.status }, chatSettings);
-    if (isRetryableFailure(result.status)) {
+    if (isRetryableFailure(result.status) && !opts.skipBreaker) {
       recordBreakerFailure(provider, result.status, chatSettings);
     }
 

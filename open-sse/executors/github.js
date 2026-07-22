@@ -49,6 +49,19 @@ export class GithubExecutor extends BaseExecutor {
     if (getModelTargetFormat("gh", model) === "claude" && this.config.messagesUrl) {
       return this.config.messagesUrl;
     }
+    // GPT/codex models tagged targetFormat:"openai-responses" in the registry
+    // are served exclusively by /responses and 400 on /chat/completions. Route
+    // them proactively so the first request lands on the right endpoint instead
+    // of burning a /chat/completions attempt and escalating reactively.
+    // (See execute() — openai-responses models skip the chat-completions path
+    // entirely via executeWithResponsesEndpoint, which performs the OpenAI →
+    // Responses request translation that /responses requires.)
+    if (
+      getModelTargetFormat("gh", model) === "openai-responses" &&
+      this.config.responsesUrl
+    ) {
+      return this.config.responsesUrl;
+    }
     return this.config.baseUrl;
   }
 
@@ -188,6 +201,21 @@ export class GithubExecutor extends BaseExecutor {
 
   async execute(options) {
     const { model, log } = options;
+
+    // Models the registry explicitly tags targetFormat:"openai-responses"
+    // (gpt-5.5, gpt-5.4, gpt-5.3-codex, …) are served ONLY by /responses and
+    // 400 on /chat/completions with "not accessible via the /chat/completions
+    // endpoint". Dispatch them proactively to the Responses path (which performs
+    // the OpenAI → Responses request translation /responses requires) instead
+    // of wasting a /chat/completions round-trip and escalating reactively.
+    // Still gated by supportsResponsesEndpoint() as defense-in-depth (#1062).
+    if (
+      getModelTargetFormat("gh", model) === "openai-responses" &&
+      this.supportsResponsesEndpoint(model)
+    ) {
+      log?.debug("GITHUB", `Proactive /responses route for ${model} (targetFormat:openai-responses)`);
+      return this.executeWithResponsesEndpoint(options);
+    }
 
     // Only use /responses for models that are explicitly known to need it (e.g. gpt codex models)
     // and that the /responses endpoint actually serves (excludes Gemini/Claude, see #1062).

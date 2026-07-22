@@ -78,6 +78,12 @@ function emit(provider) {
 /**
  * Should traffic to this provider be blocked right now?
  * Returns true if the breaker is OPEN (block) or HALF_OPEN at capacity.
+ *
+ * NOTE: this function has a SIDE EFFECT — in HALF_OPEN state it atomically
+ * claims a probe slot (increments halfOpenCalls). Use it at the point where
+ * you actually intend to send traffic. For a read-only "would this be blocked?"
+ * check (e.g. pre-filtering a combo model list), use `isBreakerBlocking()`
+ * instead to avoid consuming probe slots.
  */
 export function isCircuitOpen(provider, settings = {}) {
   const cfg = { ...BREAKER_DEFAULTS, ...(settings?.circuitBreaker || {}) };
@@ -107,6 +113,44 @@ export function isCircuitOpen(provider, settings = {}) {
   }
 
   return false; // CLOSED or HALF_OPEN with capacity → allow
+}
+
+/**
+ * Read-only check: would traffic to this provider be blocked right now?
+ *
+ * Mirrors the blocking logic of `isCircuitOpen` WITHOUT claiming a probe slot
+ * or transitioning state. Use this for pre-filtering (e.g. skipping
+ * breaker-open models from a combo list before attempting them) so we don't
+ * consume the single HALF_OPEN probe slot during a read-only inspection.
+ *
+ * A model flagged blocking here is skipped proactively; if every model is
+ * flagged (combo fully depleted), callers should still attempt the original
+ * list as a last resort because the lazy OPEN→HALF_OPEN transition inside
+ * isCircuitOpen may have fired by the time the attempt runs.
+ */
+export function isBreakerBlocking(provider, settings = {}) {
+  const cfg = { ...BREAKER_DEFAULTS, ...(settings?.circuitBreaker || {}) };
+  if (!cfg.enabled) return false;
+
+  const b = breakers.get(provider);
+  if (!b) return false; // no state = never tripped = not blocking
+
+  const now = Date.now();
+
+  if (b.state === "open") {
+    // If cooldown elapsed, the next real isCircuitOpen call will transition to
+    // HALF_OPEN — so from a read-only view we consider it NOT blocking (the
+    // attempt should proceed so isCircuitOpen can claim the probe).
+    if (b.cooldownEndsAt && now >= b.cooldownEndsAt) return false;
+    return true; // still in cooldown → blocking
+  }
+
+  if (b.state === "halfOpen") {
+    // At capacity = a probe is already in flight → additional traffic blocked.
+    return b.halfOpenCalls >= cfg.halfOpenMaxCalls;
+  }
+
+  return false; // CLOSED → not blocking
 }
 
 /**
@@ -172,7 +216,7 @@ export function recordBreakerFailure(provider, status, settings = {}) {
  * Without this, the slot leaks and the breaker sticks at capacity indefinitely.
  */
 export function releaseBreakerProbe(provider) {
-  const b = monitors.get(provider);
+  const b = breakers.get(provider);
   if (!b || b.state !== "halfOpen") return;
   if (b.halfOpenCalls > 0) {
     b.halfOpenCalls--;

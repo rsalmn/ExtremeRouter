@@ -1,3 +1,41 @@
+# v0.7.5 (2026-07-22)
+
+## Features
+- **Cline + ClinePass Quota Tracker**: both providers now report plan usage limits (5-hour / weekly / monthly) as percentUsed in the Quota Tracker dashboard. Shared `getClineUsage` handler with OAuth/API-key auth fallback.
+- **Breaker-Aware Combo Pre-Filter**: combos now proactively skip models whose provider circuit breaker is OPEN before attempting them — saving a wasted credential-selection round-trip per broken model. New read-only `isBreakerBlocking()` check (does not consume the single HALF_OPEN probe slot) + `filterBreakerOpenModels()` helper. Falls back to the original model list if ALL are blocked (probe window may open during attempt).
+- **Providers Page Redesign (list)**: full redesign — 5 collapsible sections replaced with a unified flat grid + filter chips (All / Connected / Errors / OAuth / API Key / Free / Cookie / Custom) + sort dropdown. New rich tiles (ProviderTile) with larger icons, connection counts, status badges, and an action bar (test + settings + toggle). KPI row (ProviderKpis) with interactive Errors tile. Toolbar (ProviderToolbar) with live count badges.
+- **Provider Detail Page Redesign**: God Component (1831 lines) split into 4 extracted components: `ProviderDetailHeader` (branded header), `ConnectionsCard` (toolbar + rows + bulk proxy modal), `ModelsCard` (toolbar + grid), `CollapsibleSection` (reusable wrapper). page.js reduced to a lean orchestrator (~960 lines). Visual polish: branded header with category summary, collapsible sections (Health default-collapsed), responsive model grid (grid-cols-3), progress-bar-style one-by-one test summary, compact pill toolbars.
+
+## Fixes — Combo Engine (28 bug fixes across 4 audit rounds)
+- **C1 Critical — `body_global` race condition** (swarm.js): removed module-level mutable state; `body` threaded explicitly to all stage runners. Concurrent swarm requests no longer clobber each other's prompt (cross-request leak).
+- **C2 Critical — `releaseBreakerProbe` ReferenceError** (circuitBreaker.js): `monitors`→`breakers` — half-open probe slot now releases correctly; breaker no longer stuck open forever.
+- **C1+H2 Critical — orphaned comboStrategies on rename/delete** ([id]/route.js): `patchComboStrategies` now sends partial patches with `{ [key]: null }` delete-signals compatible with the deep-merge in updateSettings.
+- **H1 — Wrong key `comboStickyLimit`** (chat.js): `comboStickyLimit`→`comboStickyRoundRobinLimit`. Round-robin fast-path now respects sticky limit config.
+- **H2 — Lost-update race in `handleSetComboStrategy`** (settingsRepo.js + CombosPageInner.js): backend deep-merges `comboStrategies` at combo-name level; UI sends only the changed entry.
+- **H3 — ComboFormModal stale create state**: reset local draft via `useEffect` watch on `isOpen` transition.
+- **H4 — ComboFormModal closure-models bug**: 3 handlers now use functional updates `setModels(prev => ...)`.
+- **H5 — PUT empty-string name bypass validation**: `if (body.name)` → `if (body.name !== undefined)` + non-empty check.
+- **M1 — Non-array models crash**: `Array.isArray(models)` validation in POST + PUT.
+- **M2 — Case-sensitive strategy compare**: `normalizeStrategy()` helper (trim+lowercase+whitelist).
+- **M3 — Fusion single-survivor stream downgrade**: re-run with stream flag preserved when `body.stream === true`.
+- **M4 — ComboCard null-guard**: `combo.models` normalized to `[]` defensively.
+- **M5 — handleDelete silent failure**: error feedback via `alert()`.
+- **M6 — Cross-strategy breaker pollution**: `skipBreaker` opt for panel calls; fusion/swarm failures no longer trip shared per-provider breaker.
+- **#1 — Fusion single-answer re-run**: return existing panel response instead of re-invoking model.
+- **#3 — `parseStrategy` truncated JSON**: lenient recovery salvages complete subtask objects via regex.
+- **#5 — `workerCount` config ignored**: `workerCount` from UI now honored via `workerCap`.
+- **L1-L9**: `getStrategyDistribution` whitelist, PUT response canonical shape, stale role-field cleanup, ModelSelectModal highlight, `VALID_NAME_REGEX` dedup, ComboFormModal fetch cleanup.
+
+## Fixes — Code Review Feedback
+- **GitHub `/responses` proactive routing** (github.js): `buildUrl()` + `execute()` route `targetFormat:"openai-responses"` models to `/responses` proactively.
+- **xAI unused `U` import** (xai.js): dead code removed.
+- **sanitize-html test** (sanitize-html.test.js): rewritten as idiomatic vitest with `it.each`/`expect` + standalone-script fallback.
+
+## Improvements
+- **Settings deep-merge** (settingsRepo.js): `comboStrategies` merged at combo-name level (not replaced), with `null` as the delete-signal.
+- **Swarm `ALIAS_TO_ID` map** (combo.js): built from REGISTRY for breaker lookups without crossing the open-sse→src layer boundary.
+- **Provider list unified entry array** (providers/page.js): ONE flat array with `category` tags replaces 5 separate section arrays.
+
 # v0.7.4 (2026-07-19)
 
 ## Features

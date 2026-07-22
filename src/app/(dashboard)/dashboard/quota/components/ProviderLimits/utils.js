@@ -499,6 +499,28 @@ export function parseQuotaData(provider, data) {
         }
         break;
       }
+      case "cline":
+      case "clinepass": {
+        // Cline / ClinePass — plan usage limits (5h / weekly / monthly) given
+        // as percentUsed. used/total carry the percentage (e.g. 51/100); the
+        // table renders the remaining bar from remainingPercentage. Windows
+        // are recurring (they reset on a fixed cadence).
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remaining: quota.remainingPercentage,
+              remainingPercentage: quota.remainingPercentage,
+              resetAt: quota.resetAt || null,
+              recurring: true,
+              unlimited: false,
+            });
+          });
+        }
+        break;
+      }
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {

@@ -2,31 +2,25 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
-import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
+import { Card, Button, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, EditConnectionModal, ConfirmModal } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
-import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
+import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
-import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 import { getProviderIconPath } from "@/shared/utils/providerIcon";
-import ModelRow from "./ModelRow";
-import CompatibleModelsSection from "./CompatibleModelsSection";
-import ConnectionRow from "./ConnectionRow";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
-import VaultPoolBadge from "./VaultPoolBadge";
-import ZenmuxPlanSelector from "./ZenmuxPlanSelector";
 import HealthTimeline from "./HealthTimeline";
-import FreeBuffProfile from "./FreeBuffProfile";
-import V0Profile from "./V0Profile";
-import QwenCloudProfile from "./QwenCloudProfile";
 import { useNewBadge } from "@/shared/hooks/useNewBadge";
+// Extracted section components (redesign)
+import ProviderDetailHeader from "./components/ProviderDetailHeader";
+import CollapsibleSection from "./components/CollapsibleSection";
+import ConnectionsCard from "./components/ConnectionsCard";
+import ModelsCard from "./components/ModelsCard";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -887,117 +881,12 @@ export default function ProviderDetailPage() {
   };
 
 
-  const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
-
-  const connectionsList = (
-    <div className="flex min-w-0 flex-col divide-y divide-border-subtle">
-      {connections
-        .map((conn, index) => (
-          <div key={conn.id} className="flex min-w-0 items-stretch">
-            <div className="flex shrink-0 items-center pl-1 sm:pl-2">
-              <input
-                type="checkbox"
-                checked={isSelected(conn.id)}
-                onChange={() => toggleSelectConnection(conn.id)}
-                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-              />
-            </div>
-            <div className="flex-1 min-w-0">
-              <ConnectionRow
-                connection={conn}
-                proxyPools={proxyPools}
-                isOAuth={isOAuth}
-                isFirst={index === 0}
-                isLast={index === connections.length - 1}
-                onMoveUp={() => handleSwapPriority(index, index - 1)}
-                onMoveDown={() => handleSwapPriority(index, index + 1)}
-                onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
-                autoPing={AUTO_PING_SETTINGS_KEYS[providerId] && conn.authType === "oauth" ? {
-                  on: autoPing.connections[conn.id] === true,
-                  onToggle: (on) => handleAutoPingConnection(conn.id, on),
-                  provider: providerId,
-                } : null}
-                onUpdateProxy={async (proxyPoolId) => {
-                  try {
-                    const res = await fetch(`/api/providers/${conn.id}`, {
-                      method: "PUT",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ proxyPoolId: proxyPoolId || null }),
-                    });
-                    if (res.ok) {
-                      setConnections(prev => prev.map(c =>
-                        c.id === conn.id
-                          ? { ...c, providerSpecificData: { ...c.providerSpecificData, proxyPoolId: proxyPoolId || null } }
-                          : c
-                      ));
-                    }
-                  } catch (error) {
-                    console.log("Error updating proxy:", error);
-                  }
-                }}
-                onEdit={() => {
-                  setSelectedConnection(conn);
-                  setShowEditModal(true);
-                }}
-                onDelete={() => handleDelete(conn.id)}
-                oneByOneStatus={oneByOneResults[conn.id] || null}
-              />
-            </div>
-          </div>
-        ))}
-    </div>
-  );
+  // NOTE: connectionsList, activePools, and bulkActionModal were extracted
+  // into ConnectionsCard.js during the page redesign. The handlers above
+  // (applyProxyAssignments, handleApplySinglePool, handleApplyOneToOne, etc.)
+  // remain here and are passed as props to ConnectionsCard.
 
   const activePools = proxyPools.filter((p) => p.isActive === true);
-
-  const bulkActionModal = (
-    <Modal
-      isOpen={showBulkProxyModal}
-      onClose={closeBulkProxyModal}
-      title={`Apply Proxy (${connections.length} connections)`}
-    >
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col">
-          <button
-            onClick={handleApplyOneToOne}
-            disabled={bulkUpdatingProxy || activePools.length === 0}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span className="material-symbols-outlined text-text-muted text-[18px]">sync_alt</span>
-            <span className="text-sm text-text-main">One-to-one (rotate)</span>
-          </button>
-          <button
-            onClick={() => handleApplySinglePool(null)}
-            disabled={bulkUpdatingProxy}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span className="material-symbols-outlined text-text-muted text-[18px]">link_off</span>
-            <span className="text-sm text-text-main">None (unbind all)</span>
-          </button>
-          {proxyPools.map((pool) => (
-            <button
-              key={pool.id}
-              onClick={() => handleApplySinglePool(pool.id)}
-              disabled={bulkUpdatingProxy || pool.isActive !== true}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-text-muted text-[18px]">lan</span>
-              <span className="truncate text-sm text-text-main">{pool.name}</span>
-              {pool.isActive !== true && (
-                <span className="text-[10px] text-text-muted">(inactive)</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {bulkUpdatingProxy && <p className="text-xs text-text-muted">Applying...</p>}
-
-        <Button onClick={closeBulkProxyModal} variant="ghost" fullWidth disabled={bulkUpdatingProxy}>
-          Cancel
-        </Button>
-      </div>
-    </Modal>
-  );
 
   const handleTestModel = async (modelId) => {
     if (testingModelIds.has(modelId)) return;
@@ -1028,306 +917,55 @@ export default function ProviderDetailPage() {
     setTestingAllModels(false);
   };
 
-  const renderModelsSection = () => {
-    if (isCompatible) {
-      return (
-        <CompatibleModelsSection
-          providerStorageAlias={providerStorageAlias}
-          providerDisplayAlias={providerDisplayAlias}
-          modelAliases={modelAliases}
-          customModels={customModels}
-          copied={copied}
-          onCopy={copy}
-          onSetAlias={handleSetAlias}
-          onDeleteAlias={handleDeleteAlias}
-          onAddCustomModel={(modelId) => handleAddCustomModel(modelId, "llm", providerStorageAlias)}
-          onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
-          connections={connections}
-          isAnthropic={isAnthropicCompatible}
-        />
-      );
-    }
-    // Combine hardcoded models with Kilo free models (deduplicated)
-    // Exclude non-llm models (embedding, tts, etc.) — they have dedicated pages under media-providers
-    const allModels = [
-      ...models,
-      ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-    ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; });
-    const disabledSet = new Set(disabledModelIds);
-    const displayModels = allModels.filter((m) => !disabledSet.has(m.id));
-    const disabledDisplayModels = allModels.filter((m) => disabledSet.has(m.id));
-    const customModelRows = getProviderCustomModelRows({
-      customModels,
-      modelAliases,
-      providerAlias: providerStorageAlias,
-      builtInModels: models,
-      type: "llm",
-    });
+  // NOTE: connectionsList, bulkActionModal, and renderModelsSection were
+  // extracted into ConnectionsCard.js and ModelsCard.js during the redesign.
+  // All handlers above remain here and are passed as props.
 
-    // Apply the search filter (match against model id, name, and full alias path).
-    const q = modelSearchQuery.trim().toLowerCase();
-    const matchesSearch = (id, name = "") =>
-      !q || id.toLowerCase().includes(q) || String(name).toLowerCase().includes(q);
-    const filteredDisplayModels = displayModels.filter((m) => matchesSearch(m.id, m.name));
-    const filteredCustomModelRows = customModelRows.filter((m) => matchesSearch(m.id, m.name));
-
-    return (
-      <div className="flex flex-wrap gap-3">
-        {/* Custom models first */}
-        {filteredCustomModelRows.map((model) => (
-          <ModelRow
-            key={`${model.source}-${model.fullModel}`}
-            model={{ id: model.id, name: model.name }}
-            fullModel={`${providerDisplayAlias}/${model.id}`}
-            alias={model.alias}
-            copied={copied}
-            onCopy={copy}
-            onSetAlias={() => {}}
-            onDeleteAlias={() => {
-              if (model.source === "custom") {
-                handleDeleteCustomModel(model.id, "llm", providerStorageAlias);
-              } else {
-                handleDeleteAlias(model.alias);
-              }
-            }}
-            testStatus={modelTestResults[model.id]}
-            onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
-            isTesting={testingModelIds.has(model.id)}
-            isCustom
-            isFree={false}
-            caps={getCaps(`${providerId}/${model.id}`)}
-          />
-        ))}
-
-        {filteredDisplayModels.map((model) => {
-          const fullModel = `${providerStorageAlias}/${model.id}`;
-          const oldFormatModel = `${providerId}/${model.id}`;
-          const existingAlias = Object.entries(modelAliases).find(
-            ([, m]) => m === fullModel || m === oldFormatModel
-          )?.[0];
-          return (
-            <ModelRow
-              key={model.id}
-              model={model}
-              fullModel={`${providerDisplayAlias}/${model.id}`}
-              alias={existingAlias}
-              copied={copied}
-              onCopy={copy}
-              onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
-              onDeleteAlias={() => handleDeleteAlias(existingAlias)}
-              testStatus={modelTestResults[model.id]}
-              onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
-              isTesting={testingModelIds.has(model.id)}
-              isFree={model.isFree}
-              onDisable={() => handleDisableModel(model.id)}
-              caps={getCaps(`${providerId}/${model.id}`)}
-            />
-          );
-        })}
-
-        {/* No search results */}
-        {modelSearchQuery.trim() && filteredDisplayModels.length === 0 && filteredCustomModelRows.length === 0 && (
-          <p className="w-full text-center text-sm text-text-muted py-4">
-            No models match &ldquo;{modelSearchQuery}&rdquo;
-          </p>
-        )}
-
-        {/* Add model button — inline, same style as model chips */}
-        <button
-          onClick={() => setShowAddCustomModel(true)}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5 sm:w-auto"
-        >
-          <span className="material-symbols-outlined text-sm">add</span>
-          Add Model
-        </button>
-
-        {/* Import Qoder models button — only show for qoder provider */}
-        {providerId === "qoder" && connections.some((conn) => conn.isActive !== false) && (
-          <button
-            onClick={handleImportQoderModels}
-            disabled={importingQoderModels}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-info transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
-              {importingQoderModels ? "progress_activity" : "download"}
-            </span>
-            {importingQoderModels ? translate("Fetching...") : translate("Fetch Qoder Models")}
-          </button>
-        )}
-
-        {/* Suggested models from provider API — show only models not yet added */}
-        {suggestedModels.length > 0 && (() => {
-          const addedFullModels = new Set([
-            ...Object.values(modelAliases),
-            ...customModelRows.map((model) => model.fullModel),
-          ]);
-          const hardcodedIds = new Set(models.map((m) => m.id));
-          const notAdded = suggestedModels.filter(
-            (m) => !addedFullModels.has(`${providerStorageAlias}/${m.id}`) && !hardcodedIds.has(m.id)
-          );
-          if (notAdded.length === 0) return null;
-          return (
-            <div className="w-full mt-2">
-              <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
-              <div className="flex flex-wrap gap-2">
-                {notAdded.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={async () => {
-                      await handleAddCustomModel(m.id, "llm", providerStorageAlias);
-                    }}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
-                    title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
-                  >
-                    <span className="material-symbols-outlined text-[13px]">add</span>
-                    {m.id.split("/").pop()}
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Disabled models — restorable */}
-        {disabledDisplayModels.length > 0 && (
-          <div className="w-full mt-2">
-            <p className="text-xs text-text-muted mb-2">Disabled models ({disabledDisplayModels.length}):</p>
-            <div className="flex flex-wrap gap-2">
-              {disabledDisplayModels.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => handleEnableModel(m.id)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-border text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
-                  title="Restore model"
-                >
-                  <span className="material-symbols-outlined text-[13px]">add</span>
-                  {m.id}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
+  // ── Early returns ──────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-6">
         <CardSkeleton />
         <CardSkeleton />
       </div>
     );
-}
+  }
 
   if (!providerInfo) {
     return (
-      <div className="text-center py-20">
+      <div className="py-20 text-center">
         <p className="text-text-muted">Provider not found</p>
-        <Link href="/dashboard/providers" className="text-primary mt-4 inline-block">
+        <Link href="/dashboard/providers" className="mt-4 inline-block text-primary">
           Back to Providers
         </Link>
       </div>
     );
   }
 
-  // Resolve the provider icon asset path (handles compatible prefixes + SVG/PNG).
   const headerIconPath = getProviderIconPath(providerInfo.id, providerInfo.apiType);
 
+  // ── Main render ────────────────────────────────────────────────────────
+
   return (
-    <div className="flex min-w-0 flex-col gap-6">
-      {/* Header */}
-      <div className="min-w-0">
-        <Link
-          href="/dashboard/providers"
-          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
-        >
-          <span className="material-symbols-outlined text-lg">arrow_back</span>
-          Back to Providers
-        </Link>
-        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-          <div
-            className="flex size-12 shrink-0 items-center justify-center rounded-lg"
-            style={{ backgroundColor: `${providerInfo.color}15` }}
-          >
-            {headerImgError ? (
-              <span className="text-sm font-bold" style={{ color: providerInfo.color }}>
-                {providerInfo.textIcon || providerInfo.id.slice(0, 2).toUpperCase()}
-              </span>
-            ) : (
-              <Image
-                src={headerIconPath}
-                alt={providerInfo.name}
-                width={48}
-                height={48}
-                className="max-h-12 max-w-12 rounded-lg object-contain"
-                sizes="48px"
-                onError={() => setHeaderImgError(true)}
-              />
-            )}
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{providerInfo.name}</h1>
-              {(providerInfo.notice?.apiKeyUrl || providerInfo.notice?.signupUrl || providerInfo.website) && (
-                <a
-                  href={providerInfo.notice?.apiKeyUrl || providerInfo.notice?.signupUrl || providerInfo.website}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-                >
-                  <span className="material-symbols-outlined text-sm">open_in_new</span>
-                  {providerInfo.notice?.apiKeyUrl ? "Get API Key" : "Sign up / Learn more"}
-                </a>
-              )}
-              {providerId === "moonshot" && (
-                <a
-                  href="https://www.kimi.com/activities/viral-referral/share?scenario=invite&from=share_poster&invitation_code=BPGXZR"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 rounded-full bg-primary/12 px-3 py-1 text-xs font-semibold text-primary ring-1 ring-primary/20 hover:bg-primary/20 transition-colors"
-                >
-                  <span className="material-symbols-outlined text-sm">celebration</span>
-                  Get KIMI K3 For Free
-                </a>
-              )}
-            </div>
-            <p className="text-text-muted">
-              {connections.length} connection{connections.length === 1 ? "" : "s"}
-            </p>
-          </div>
-        </div>
-      </div>
+    <div className="flex min-w-0 flex-col gap-5">
+      {/* Branded header */}
+      <ProviderDetailHeader
+        providerInfo={providerInfo}
+        providerId={providerId}
+        connections={connections}
+        modelCount={models.length}
+        headerIconPath={headerIconPath}
+        headerImgError={headerImgError}
+        setHeaderImgError={setHeaderImgError}
+      />
 
-      {providerInfo.deprecated && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-          <span className="material-symbols-outlined text-[16px] text-yellow-500 mt-0.5 shrink-0">warning</span>
-          <p className="text-xs text-red-600 dark:text-yellow-400 leading-relaxed">{providerInfo.deprecationNotice}</p>
-        </div>
-      )}
-
-      {providerInfo.notice?.text && !providerInfo.deprecated && (
-        <div className="flex flex-col gap-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2 sm:flex-row sm:items-center">
-          <span className="material-symbols-outlined text-[16px] text-info shrink-0">info</span>
-          <p className="min-w-0 flex-1 text-xs leading-relaxed text-info">{providerInfo.notice.text}</p>
-          {providerInfo.notice.apiKeyUrl && (
-            <a
-              href={providerInfo.notice.apiKeyUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex justify-center rounded bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-600 sm:py-0.5"
-            >
-              Get API Key →
-            </a>
-          )}
-        </div>
-      )}
-
+      {/* Compatible-node details (OpenAI/Anthropic compatible only) */}
       {isCompatible && providerNode && (
         <Card>
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold">{isAnthropicCompatible ? "Anthropic Compatible Details" : "OpenAI Compatible Details"}</h2>
+              <h2 className="text-lg font-semibold">{isAnthropicCompatible ? "Anthropic Compatible" : "OpenAI Compatible"}</h2>
               <p className="break-all text-sm text-text-muted">
                 {isAnthropicCompatible ? "Messages API" : (providerNode.apiType === "responses" ? "Responses API" : "Chat Completions")} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
                 {isAnthropicCompatible ? "messages" : (providerNode.apiType === "responses" ? "responses" : "chat/completions")}
@@ -1337,28 +975,19 @@ export default function ProviderDetailPage() {
               <Button
                 size="sm"
                 icon="add"
-                onClick={() => {
-                  setAddConnectionError("");
-                  setShowAddApiKeyModal(true);
-                }}
+                onClick={() => { setAddConnectionError(""); setShowAddApiKeyModal(true); }}
                 className="w-full sm:w-auto"
               >
                 Add API Key
               </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                icon="edit"
-                onClick={() => setShowEditNodeModal(true)}
-                className="w-full sm:w-auto"
-              >
+              <Button size="sm" variant="secondary" icon="edit" onClick={() => setShowEditNodeModal(true)} className="w-full sm:w-auto">
                 Edit
               </Button>
               <Button
                 size="sm"
                 variant="secondary"
                 icon="delete"
-                onClick={async () => {
+                onClick={() => {
                   setConfirmState({
                     title: "Delete Compatible Node",
                     message: `Delete this ${isAnthropicCompatible ? "Anthropic" : "OpenAI"} Compatible node?`,
@@ -1366,13 +995,11 @@ export default function ProviderDetailPage() {
                       setConfirmState(null);
                       try {
                         const res = await fetch(`/api/provider-nodes/${providerId}`, { method: "DELETE" });
-                        if (res.ok) {
-                          router.push("/dashboard/providers");
-                        }
+                        if (res.ok) router.push("/dashboard/providers");
                       } catch (error) {
                         console.log("Error deleting provider node:", error);
                       }
-                    }
+                    },
                   });
                 }}
                 className="w-full sm:w-auto"
@@ -1384,336 +1011,139 @@ export default function ProviderDetailPage() {
         </Card>
       )}
 
-      {/* Connections */}
-      {isFreeNoAuth ? (
-        <NoAuthProxyCard providerId={providerId} />
-      ) : (
-        <Card>
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-col gap-2">
-              <h2 className="text-lg font-semibold">Connections</h2>
-              <VaultPoolBadge providerId={providerId} />
-              {providerId === "freebuff-web" && connections.length > 0 && (
-                <FreeBuffProfile connectionId={connections[0].id} />
-              )}
-              {providerId === "v0-vercel-web" && connections.length > 0 && (
-                <V0Profile connectionId={connections[0].id} />
-              )}
-              {providerId === "qwencloud" && connections.length > 0 && (
-                <QwenCloudProfile connectionId={connections[0].id} />
-              )}
-            </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-              {connections.length > 0 && proxyPools.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  icon="lan"
-                  onClick={() => setShowBulkProxyModal(true)}
-                >
-                  Apply Proxy
-                </Button>
-              )}
-              {connections.length > 0 && (
-                <>
-                  {selectedConnectionIds.length > 0 && (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      icon="delete"
-                      onClick={handleBulkDelete}
-                    >
-                      Delete Selected ({selectedConnectionIds.length})
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    icon="sync"
-                    onClick={handleRunOneByOneTest}
-                    disabled={oneByOneRunning}
-                  >
-                    {oneByOneRunning ? "Testing Connection One-by-One..." : "Test Connection One-by-One"}
-                  </Button>
-                  {oneByOneRunning && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon="stop"
-                      onClick={handleStopOneByOneTest}
-                      disabled={oneByOneStopping}
-                    >
-                      {oneByOneStopping ? "Stopping..." : "Stop"}
-                    </Button>
-                  )}
-                </>
-              )}
-              {/* Thinking config */}
-              {thinkingConfig && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-text-muted font-medium">Thought Level</span>
-                  <select
-                    value={thinkingMode}
-                    onChange={(e) => handleThinkingModeChange(e.target.value)}
-                    className="text-xs px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:border-primary"
-                  >
-                    {thinkingConfig.options.map((opt) => (
-                      <option key={opt} value={opt}>{opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {/* Round Robin toggle */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-text-muted font-medium">Round Robin</span>
-                <Toggle
-                  checked={providerStrategy === "round-robin"}
-                  onChange={handleRoundRobinToggle}
-                />
-                {providerStrategy === "round-robin" && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-text-muted">Sticky:</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={providerStickyLimit}
-                      onChange={(e) => handleStickyLimitChange(e.target.value)}
-                      placeholder="1"
-                      className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
-                    />
-                  </div>
-                )}
-              </div>
-              {/* ZenMux plan selector — only for zenmux-free provider */}
-              {providerId === "zenmux-free" && connections.length > 0 && (
-                <ZenmuxPlanSelector
-                  connectionId={connections[0].id}
-                  cookie={connections[0].apiKey || ""}
-                  currentPlan={connections[0].providerSpecificData?.zenmuxPlan || "free"}
-                  onPlanChanged={() => {
-                    // Refresh connections so the new plan is reflected.
-                    fetchConnections();
-                  }}
-                />
-              )}
-            </div>
-          </div>
+      {/* ── Collapsible sections ── */}
 
-          {connections.length === 0 ? (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <div className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary/10 text-primary shrink-0">
-                  <span className="material-symbols-outlined text-[18px]">{isOAuth ? "lock" : "key"}</span>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm text-text-muted">No connections yet</p>
-                  {hasDualAuthModes && (
-                    <p className="text-xs text-text-muted">
-                      Choose {oauthConnectionLabel} or {apiKeyConnectionLabel}.
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                {hasDualAuthModes ? (
-                  <>
-                    <Button size="sm" icon="lock" variant="secondary" onClick={triggerOAuthConnection}>
-                      {oauthConnectionLabel}
-                    </Button>
-                    <Button size="sm" icon="key" onClick={triggerApiKeyConnection}>
-                      {apiKeyConnectionLabel}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    {!isCompatible && providerId === "iflow" && (
-                      <Button size="sm" icon="cookie" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
-                        Cookie
-                      </Button>
-                    )}
-                    {providerId === "codex" && (
-                      <Button size="sm" icon="playlist_add" variant="secondary" onClick={() => setShowBulkImportCodex(true)}>
-                        {translate("Bulk Add")}
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      icon="add"
-                      onClick={triggerAddConnection}
-                    >
-                      {isCompatible ? "Add API Key" : (providerId === "iflow" ? "OAuth" : "Add Connection")}
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          ) : (
-            <>
-              {oneByOneSummary && (
-                <div className="mb-4 rounded-lg border border-border bg-black/[0.02] px-3 py-2 text-xs text-text-muted dark:border-white/10 dark:bg-white/[0.03]">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span>Total: {oneByOneSummary.total}</span>
-                    <span>Completed: {oneByOneSummary.completed}</span>
-                    <span>Passed: {oneByOneSummary.passed}</span>
-                    <span>Failed: {oneByOneSummary.failed}</span>
-                    {oneByOneSummary.stopped && (
-                      <span className="text-warning">Stopped</span>
-                    )}
-                    {oneByOneRunning && oneByOneCurrentConnectionId && (
-                      <span>Running: {connections.find((conn) => conn.id === oneByOneCurrentConnectionId)?.name || oneByOneCurrentConnectionId}</span>
-                    )}
-                  </div>
-                </div>
-              )}
-              {connections.length > 0 && (
-                <div className="mb-3 flex items-center gap-2 border-b border-black/[0.03] pb-2 dark:border-white/[0.03]">
-                  <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted hover:text-primary">
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      onChange={toggleSelectAllConnections}
-                      className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
-                    />
-                    Select All
-                  </label>
-                </div>
-              )}
-              {connectionsList}
-              {!isCompatible && (
-                <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
-                  {providerId === "iflow" && (
-                    <Button
-                      size="sm"
-                      icon="cookie"
-                      variant="secondary"
-                      onClick={() => setShowIFlowCookieModal(true)}
-                      title="Add connection using browser cookie"
-                      className="w-full sm:w-auto"
-                    >
-                      Cookie
-                    </Button>
-                  )}
-                  {providerId === "codex" && (
-                    <Button
-                      size="sm"
-                      icon="playlist_add"
-                      variant="secondary"
-                      onClick={() => setShowBulkImportCodex(true)}
-                      title={translate("Bulk import codex accounts from JSON")}
-                      className="w-full sm:w-auto"
-                    >
-                      {translate("Bulk Add")}
-                    </Button>
-                  )}
-                  {hasDualAuthModes ? (
-                    <>
-                      <Button
-                        size="sm"
-                        icon="lock"
-                        variant="secondary"
-                        onClick={triggerOAuthConnection}
-                        className="w-full sm:w-auto"
-                      >
-                        {oauthConnectionLabel}
-                      </Button>
-                      <Button
-                        size="sm"
-                        icon="key"
-                        onClick={triggerApiKeyConnection}
-                        className="w-full sm:w-auto"
-                      >
-                        {apiKeyConnectionLabel}
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      size="sm"
-                      icon="add"
-                      onClick={triggerAddConnection}
-                      className="w-full sm:w-auto"
-                    >
-                      Add
-                    </Button>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-        </Card>
-      )}
+      {/* Connections */}
+      <CollapsibleSection
+        title="Connections"
+        icon="cable"
+        count={connections.length}
+        defaultExpanded
+      >
+        <ConnectionsCard
+          // identity
+          providerId={providerId}
+          isOAuth={isOAuth}
+          isCompatible={isCompatible}
+          isFreeNoAuth={isFreeNoAuth}
+          hasDualAuthModes={hasDualAuthModes}
+          oauthConnectionLabel={oauthConnectionLabel}
+          apiKeyConnectionLabel={apiKeyConnectionLabel}
+          thinkingConfig={thinkingConfig}
+          AUTO_PING_SETTINGS_KEYS={AUTO_PING_SETTINGS_KEYS}
+          // data
+          connections={connections}
+          proxyPools={proxyPools}
+          selectedConnectionIds={selectedConnectionIds}
+          selectedConnections={selectedConnections}
+          allSelected={allSelected}
+          oneByOneRunning={oneByOneRunning}
+          oneByOneStopping={oneByOneStopping}
+          oneByOneCurrentConnectionId={oneByOneCurrentConnectionId}
+          oneByOneResults={oneByOneResults}
+          oneByOneSummary={oneByOneSummary}
+          providerStrategy={providerStrategy}
+          providerStickyLimit={providerStickyLimit}
+          thinkingMode={thinkingMode}
+          autoPing={autoPing}
+          // modal state
+          showBulkProxyModal={showBulkProxyModal}
+          bulkUpdatingProxy={bulkUpdatingProxy}
+          activePools={activePools}
+          selectedProxySummary={selectedProxySummary}
+          // handlers
+          handleSwapPriority={handleSwapPriority}
+          handleUpdateConnectionStatus={handleUpdateConnectionStatus}
+          handleDelete={handleDelete}
+          handleBulkDelete={handleBulkDelete}
+          handleRunOneByOneTest={handleRunOneByOneTest}
+          handleStopOneByOneTest={handleStopOneByOneTest}
+          handleRoundRobinToggle={handleRoundRobinToggle}
+          handleStickyLimitChange={handleStickyLimitChange}
+          handleThinkingModeChange={handleThinkingModeChange}
+          handleAutoPingConnection={handleAutoPingConnection}
+          triggerOAuthConnection={triggerOAuthConnection}
+          triggerApiKeyConnection={triggerApiKeyConnection}
+          triggerAddConnection={triggerAddConnection}
+          toggleSelectConnection={toggleSelectConnection}
+          toggleSelectAllConnections={toggleSelectAllConnections}
+          openBulkProxyModal={openBulkProxyModal}
+          closeBulkProxyModal={closeBulkProxyModal}
+          applyProxyAssignments={applyProxyAssignments}
+          handleApplySinglePool={handleApplySinglePool}
+          handleApplyOneToOne={handleApplyOneToOne}
+          fetchConnections={fetchConnections}
+          setSelectedConnection={setSelectedConnection}
+          setShowEditModal={setShowEditModal}
+          setShowBulkProxyModal={setShowBulkProxyModal}
+          setShowIFlowCookieModal={setShowIFlowCookieModal}
+          setShowBulkImportCodex={setShowBulkImportCodex}
+          setConnections={setConnections}
+        />
+      </CollapsibleSection>
 
       {/* Health Timeline */}
-      <Card>
-        <div className="py-1">
+      <CollapsibleSection
+        title="Health"
+        icon="monitoring"
+        defaultExpanded={false}
+      >
+        <div className="px-4 py-3">
           <HealthTimeline providerId={providerId} />
         </div>
-      </Card>
+      </CollapsibleSection>
 
       {/* Models */}
-      <Card>
-        <div className="mb-4 flex flex-col gap-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-semibold">
-              {"Available Models"}
-            </h2>
-            {!isCompatible && (() => {
-              const allIds = [
-                ...models,
-                ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-              ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
-              const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
-              // Models visible after search filter — used to scope "Test All".
-              const q = modelSearchQuery.trim().toLowerCase();
-              const testableIds = activeIds.filter((id) =>
-                !q || id.toLowerCase().includes(q)
-              );
-              return (
-                <div className="flex flex-wrap gap-2">
-                  {disabledModelIds.length > 0 && (
-                    <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
-                      Active All
-                    </Button>
-                  )}
-                  {activeIds.length > 0 && (
-                    <Button size="sm" variant="secondary" icon="block" onClick={() => handleDisableAll(activeIds)}>
-                      Disable All
-                    </Button>
-                  )}
-                  {(connections.length > 0 || isFreeNoAuth) && testableIds.length > 0 && (
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      icon={testingAllModels ? "progress_activity" : "play_arrow"}
-                      onClick={() => handleTestAllModels(testableIds)}
-                      disabled={testingAllModels}
-                    >
-                      {testingAllModels ? "Testing..." : `Test All (${testableIds.length})`}
-                    </Button>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-          {/* Search box — applies to both built-in and custom model rows */}
-          <div className="sm:max-w-xs">
-            <Input
-              type="search"
-              placeholder="Search models..."
-              value={modelSearchQuery}
-              onChange={(e) => setModelSearchQuery(e.target.value)}
-              className="w-full"
-            />
-          </div>
-        </div>
-        {!!modelsTestError && (
-          <p className="text-xs text-danger mb-3 break-words">{modelsTestError}</p>
-        )}
-        {renderModelsSection()}
-      </Card>
+      <CollapsibleSection
+        title="Models"
+        icon="apps"
+        count={models.length}
+        defaultExpanded
+      >
+        <ModelsCard
+          // identity
+          providerId={providerId}
+          isCompatible={isCompatible}
+          isAnthropicCompatible={isAnthropicCompatible}
+          isFreeNoAuth={isFreeNoAuth}
+          providerStorageAlias={providerStorageAlias}
+          providerDisplayAlias={providerDisplayAlias}
+          // data
+          models={models}
+          kiloFreeModels={kiloFreeModels}
+          modelAliases={modelAliases}
+          customModels={customModels}
+          disabledModelIds={disabledModelIds}
+          modelTestResults={modelTestResults}
+          testingModelIds={testingModelIds}
+          testingAllModels={testingAllModels}
+          modelsTestError={modelsTestError}
+          modelSearchQuery={modelSearchQuery}
+          connections={connections}
+          suggestedModels={suggestedModels}
+          importingQoderModels={importingQoderModels}
+          copied={copied}
+          // hooks
+          getCaps={getCaps}
+          // handlers
+          copy={copy}
+          handleTestModel={handleTestModel}
+          handleTestAllModels={handleTestAllModels}
+          handleDisableModel={handleDisableModel}
+          handleEnableModel={handleEnableModel}
+          handleDisableAll={handleDisableAll}
+          handleEnableAll={handleEnableAll}
+          handleSetAlias={handleSetAlias}
+          handleDeleteAlias={handleDeleteAlias}
+          handleAddCustomModel={handleAddCustomModel}
+          handleDeleteCustomModel={handleDeleteCustomModel}
+          handleImportQoderModels={handleImportQoderModels}
+          setModelSearchQuery={setModelSearchQuery}
+          setShowAddCustomModel={setShowAddCustomModel}
+        />
+      </CollapsibleSection>
 
-      {bulkActionModal}
-
-      {/* Modals */}
+      {/* ── Modals (unchanged) ── */}
       {providerId === "kiro" ? (
         <KiroOAuthWrapper
           isOpen={showOAuthModal}
@@ -1722,33 +1152,14 @@ export default function ProviderDetailPage() {
           onClose={() => setShowOAuthModal(false)}
         />
       ) : providerId === "cursor" ? (
-        <CursorAuthModal
-          isOpen={showOAuthModal}
-          onSuccess={handleOAuthSuccess}
-          onClose={() => setShowOAuthModal(false)}
-        />
+        <CursorAuthModal isOpen={showOAuthModal} onSuccess={handleOAuthSuccess} onClose={() => setShowOAuthModal(false)} />
       ) : providerId === "gitlab" ? (
-        <GitLabAuthModal
-          isOpen={showOAuthModal}
-          providerInfo={providerInfo}
-          onSuccess={handleOAuthSuccess}
-          onClose={() => setShowOAuthModal(false)}
-        />
+        <GitLabAuthModal isOpen={showOAuthModal} providerInfo={providerInfo} onSuccess={handleOAuthSuccess} onClose={() => setShowOAuthModal(false)} />
       ) : (
-        <OAuthModal
-          isOpen={showOAuthModal}
-          provider={providerId}
-          providerInfo={providerInfo}
-          onSuccess={handleOAuthSuccess}
-          onClose={() => setShowOAuthModal(false)}
-        />
+        <OAuthModal isOpen={showOAuthModal} provider={providerId} providerInfo={providerInfo} onSuccess={handleOAuthSuccess} onClose={() => setShowOAuthModal(false)} />
       )}
       {providerId === "iflow" && (
-        <IFlowCookieModal
-          isOpen={showIFlowCookieModal}
-          onSuccess={handleIFlowCookieSuccess}
-          onClose={() => setShowIFlowCookieModal(false)}
-        />
+        <IFlowCookieModal isOpen={showIFlowCookieModal} onSuccess={handleIFlowCookieSuccess} onClose={() => setShowIFlowCookieModal(false)} />
       )}
       <AddApiKeyModal
         isOpen={showAddApiKeyModal}
@@ -1763,10 +1174,7 @@ export default function ProviderDetailPage() {
         error={addConnectionError}
         onSave={handleSaveApiKey}
         onBulkDone={fetchConnections}
-        onClose={() => {
-          setAddConnectionError("");
-          setShowAddApiKeyModal(false);
-        }}
+        onClose={() => { setAddConnectionError(""); setShowAddApiKeyModal(false); }}
       />
       <EditConnectionModal
         isOpen={showEditModal}
@@ -1789,23 +1197,13 @@ export default function ProviderDetailPage() {
           isOpen={showAddCustomModel}
           providerAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}
-          onSave={async (modelId) => {
-            await handleAddCustomModel(modelId, "llm", providerStorageAlias);
-            setShowAddCustomModel(false);
-          }}
+          onSave={async (modelId) => { await handleAddCustomModel(modelId, "llm", providerStorageAlias); setShowAddCustomModel(false); }}
           onClose={() => setShowAddCustomModel(false)}
         />
       )}
-
       {providerId === "codex" && (
-        <BulkImportCodexModal
-          isOpen={showBulkImportCodex}
-          onClose={() => setShowBulkImportCodex(false)}
-          onSuccess={fetchConnections}
-        />
+        <BulkImportCodexModal isOpen={showBulkImportCodex} onClose={() => setShowBulkImportCodex(false)} onSuccess={fetchConnections} />
       )}
-
-      {/* AG Risk Confirmation Modal */}
       <ConfirmModal
         isOpen={showAgRiskModal}
         onClose={() => setShowAgRiskModal(false)}
@@ -1816,8 +1214,6 @@ export default function ProviderDetailPage() {
         cancelText="Cancel"
         variant="danger"
       />
-
-      {/* Confirm Modal */}
       <ConfirmModal
         isOpen={!!confirmState}
         onClose={() => setConfirmState(null)}

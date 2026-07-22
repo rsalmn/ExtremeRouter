@@ -34,6 +34,12 @@ export default {
         "clineHeaders",
       ],
     },
+    // Quota Tracker — plan usage limits (5h / weekly / monthly) returned as
+    // percentUsed. Same host & endpoint as the `cline` provider; both providers
+    // share the getClineUsage handler.
+    usage: {
+      url: "https://api.cline.bot/api/v1/users/me/plan/usage-limits",
+    },
   },
   // Model IDs follow the documented `{provider}/{model}` format.
   // `cline-pass/` prefix is required by the Cline API for ClinePass models.
@@ -59,6 +65,10 @@ export default {
   thinkingConfig: {
     options: ["auto", "on", "off"],
     defaultMode: "auto",
+  },
+  features: {
+    usage: true,
+    usageApikey: true,
   },
 };
 
