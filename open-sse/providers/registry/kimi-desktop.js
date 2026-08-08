@@ -58,6 +58,11 @@ export default {
   features: {
     usage: true,
   },
+  thinkingConfig: {
+    options: ["standard", "high", "max"],
+    defaultMode: "high",
+  },
+  quotaFamily: "kimi-desktop",
   oauth: {
     tokenStoragePath: {
       win32: "%APPDATA%\\kimi-desktop\\bridge-store\\token-store.json",
