@@ -62,7 +62,7 @@
     "recharts": "^3.7.0",
     "socks-proxy-agent": "^8.0.5",
     "sql.js": "^1.14.1",
-    "undici": "^7.29.0",
+    "undici": "^8.10.0",
     "uuid": "^13.0.0",
     "wreq-js": "^2.3.1",
     "zustand": "^5.0.10"
