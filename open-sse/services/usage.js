@@ -28,6 +28,7 @@ import { getInfronUsage } from "./usage/infron.js";
 import { getKimchiUsage } from "./usage/kimchi.js";
 import { getKimiDesktopUsage } from "./usage/kimi-desktop.js";
 import { getZedUsage } from "./usage/zed.js";
+import { getXkiroUsage } from "./usage/xkiro.js";
 
 /**
  * Get usage data for a provider connection
@@ -78,6 +79,8 @@ const USAGE_HANDLERS = {
   // Zed: plan + edit-prediction quota from /client/users/me. refreshToken is
   // the long-lived USER token (accessToken is the short-lived LLM token).
   zed: (c) => getZedUsage(c.accessToken, c.providerSpecificData, c.proxyOptions, c.refreshToken),
+  // xKiro: the same sk-xt- key used for chat reads /v1/usage (free endpoint).
+  xkiro: (c) => getXkiroUsage({ apiKey: c.apiKey, accessToken: c.accessToken }, c.proxyOptions),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null) {

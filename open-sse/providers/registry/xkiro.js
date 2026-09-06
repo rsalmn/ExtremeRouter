@@ -41,11 +41,17 @@ export default {
   category: "apikey",
   authType: "apikey",
   authModes: ["apikey"],
+  // BOTH flags required: `usage` gates USAGE_SUPPORTED_PROVIDERS (Quota UI
+  // list), `usageApikey` gates USAGE_APIKEY_PROVIDERS (api-key connections
+  // allowed past the authType check). /v1/usage is free to call with the
+  // chat key — no separate management key (unlike TokenRouter).
+  features: { usage: true, usageApikey: true },
   transport: {
     baseUrl: "https://api.xkiro.com/v1/chat/completions",
     format: "openai",
     thinkingFormat: "openai",
     validateUrl: "https://api.xkiro.com/v1/models",
+    usage: { url: "https://api.xkiro.com/v1/usage" },
   },
   thinkingConfig: {
     options: ["auto", "none", "minimal", "low", "medium", "high", "xhigh", "max"],
