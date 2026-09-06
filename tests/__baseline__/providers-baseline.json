@@ -2391,5 +2391,11 @@
       "header": "x-api-key",
       "scheme": "raw"
     }
+  },
+  "xkiro": {
+    "baseUrl": "https://api.xkiro.com/v1/chat/completions",
+    "format": "openai",
+    "thinkingFormat": "openai",
+    "validateUrl": "https://api.xkiro.com/v1/models"
   }
 }

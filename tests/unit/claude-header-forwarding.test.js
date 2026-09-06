@@ -12,6 +12,12 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// Every test here resets modules and re-imports the executor graph — which now
+// includes the full 300+ entry provider registry (xkiro alone adds 112 models
+// + caps + pricing). Re-import cost under parallel suite load occasionally
+// exceeds the 5s default, so give this file headroom instead of chasing flakes.
+vi.setConfig({ testTimeout: 30_000 });
+
 // ─── claudeHeaderCache ────────────────────────────────────────────────────────
 
 describe("claudeHeaderCache", () => {
