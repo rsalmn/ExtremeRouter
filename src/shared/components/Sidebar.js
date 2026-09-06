@@ -82,7 +82,7 @@ export default function Sidebar({ onClose }) {
       <div className="border-b border-border-subtle p-4">
         <Link href="/dashboard" onClick={onClose} className="group flex items-center gap-3">
           <div className="flex size-9 items-center justify-center rounded-brand bg-primary text-white shadow-[var(--shadow-warm)]">
-            <span className="material-symbols-outlined text-[20px]">hub</span>
+            <img src="/favicon.svg" alt="ExtremeRouter" className="size-9 rounded-brand" />
           </div>
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold tracking-tight text-text-main">ExtremeRouter</div>
