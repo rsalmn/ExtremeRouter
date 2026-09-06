@@ -20,6 +20,9 @@ FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
 
 LABEL org.opencontainers.image.title="extremerouter"
+LABEL org.opencontainers.image.version="0.8.8"
+LABEL org.opencontainers.image.source="https://github.com/rsalmn/ExtremeRouter"
+LABEL org.opencontainers.image.description="Self-hosted AI gateway - 300+ providers behind one OpenAI-compatible API"
 
 ENV NODE_ENV=production
 ENV PORT=20128
