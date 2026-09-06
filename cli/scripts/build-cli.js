@@ -248,6 +248,20 @@ if (fs.existsSync(mitmSrc)) {
   console.log("⏭️  No MITM files found\n");
 }
 
+// Step 7a2: Copy src/sse — custom-server.js dynamic-imports
+// ./src/sse/services/backgroundTokenRefresh.js, which the Next.js standalone
+// trace does NOT include (dynamic import outside the bundle). Without it the
+// background token refresh silently fails at startup.
+console.log("7️⃣ a2 Copying src/sse (background services)...");
+const sseSrc = path.join(appDir, "src", "sse");
+const sseDest = path.join(cliAppDir, "src", "sse");
+if (fs.existsSync(sseSrc)) {
+  copyRecursive(sseSrc, sseDest);
+  console.log("✅ Copied src/sse");
+} else {
+  console.log("⏭️  No src/sse found");
+}
+
 // Step 7b: Copy standalone updater (headless Node process for install progress)
 console.log("7️⃣ b Copying updater files...");
 const updaterSrc = path.join(appDir, "src", "lib", "updater");

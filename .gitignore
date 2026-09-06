@@ -107,3 +107,8 @@ outputs/
 *.orig
 *.rej
 .freebuff/
+
+# Node SEA build artifacts
+dist-sea/
+sea-config.json
+sea-prep.blob

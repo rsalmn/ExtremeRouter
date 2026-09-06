@@ -107,10 +107,13 @@ jobs:
           fi
 
           # Build the JSON payload with jq (safe escaping of markdown).
+          # Docker Hub field limits: description (short) <= 100 chars, full
+          # description <= 25000 chars - exceeding either returns HTTP 400.
+          # Both are clamped defensively so an edit can never break the release.
           jq -n \
-            --arg description "Self-hosted AI gateway: 304+ providers, format translation, smart fallback, quota tracking, 20-40% token savings." \
+            --arg description "Self-hosted AI gateway - 300+ providers, smart fallback, quota tracking, token savings." \
             --arg full_description "$(cat .github/docker-hub-description.md)" \
-            '{description: $description, full_description: $full_description}' \
+            '{description: ($description | if length > 100 then .[0:100] else . end), full_description: ($full_description | if length > 25000 then .[0:25000] else . end)}' \
             > /tmp/dh-description.json
 
           # PATCH the repository overview.

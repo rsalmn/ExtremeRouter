@@ -1,0 +1,104 @@
+name: Build Executables
+
+# Single-executable distributions (Node SEA): ExtremeRouter-<os>-<arch> per
+# platform, attached to the tag's GitHub Release. Docker images are built by
+# docker-publish.yml; this workflow runs alongside it on the same tags.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  quality:
+    name: Quality gate
+    uses: ./.github/workflows/quality-gate.yml
+
+  build:
+    name: SEA exe (${{ matrix.os }})
+    needs: quality
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: ExtremeRouter-windows-x64.exe
+          - os: ubuntu-latest
+            artifact: ExtremeRouter-linux-x64
+          - os: macos-latest
+            artifact: ExtremeRouter-macos-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # node:sqlite unflagged — SEA has no better-sqlite3
+          cache: npm
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Build Next.js standalone (traced into CLI payload)
+        run: npm run build
+        env:
+          NEXT_TRACING_ROOT_MODE: workspace
+
+      - name: Assemble CLI payload (cli/app)
+        run: node cli/scripts/build-cli.js
+        env:
+          NEXT_TRACING_ROOT_MODE: workspace
+
+      - name: Build single executable (SEA)
+        run: node scripts/sea/build-exe.cjs
+
+      - name: Smoke — serve and poll the dashboard
+        shell: bash
+        run: |
+          EXT="dist-sea/${{ matrix.artifact }}"
+          [ "${{ runner.os }}" = "Windows" ] && EXT="dist-sea\\${{ matrix.artifact }}"
+          PORT=20199 "$EXT" --serve &
+          SERVER_PID=$!
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null "http://127.0.0.1:20199/"; then
+              echo "dashboard reachable after ${i}s"
+              break
+            fi
+            sleep 1
+            if [ "$i" = "60" ]; then
+              echo "::error::dashboard never became reachable"
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+            fi
+          done
+          kill $SERVER_PID 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist-sea/${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Attach executables to release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-sea
+          merge-multiple: true
+
+      - name: Attach to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ls -la dist-sea
+          gh release upload "$TAG" dist-sea/ExtremeRouter-* --clobber --repo "$GITHUB_REPOSITORY"
