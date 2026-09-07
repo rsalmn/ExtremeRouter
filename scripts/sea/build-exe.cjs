@@ -64,6 +64,9 @@ function inject(hostBin, outPath, { chmod, smoke }) {
   // Node >= 20.12 refuses to spawn .cmd shims without a shell (EINVAL, CVE
   // 2024-27980) - route npx through cmd /c on Windows.
   const npxArgs = ["--yes", POSTJECT, outPath, "NODE_SEA_BLOB", blob, "--sentinel-fuse", SENTINEL];
+  // Required for Mach-O targets: without NODE_SEA the kernel rejects the
+  // injected binary (SIGKILL) even after a valid ad-hoc re-sign.
+  if (outPath.includes("macos")) npxArgs.push("--macho-segment-name", "NODE_SEA");
   if (process.platform === "win32") {
     execFileSync("cmd.exe", ["/c", "npx", ...npxArgs], { cwd: root, stdio: "inherit" });
   } else {
