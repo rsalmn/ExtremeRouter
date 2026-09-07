@@ -1125,6 +1125,33 @@ function stripConfidenceMarker(text) {
 }
 
 /**
+ * External protocol adapter for Cascade. Internal stages are consumed as
+ * finalized JSON (stream:false) so CONFIDENCE can be parsed; the client's
+ * stream contract must still be honored on the outer boundary.
+ *
+ * When the client requested stream:true, wrap the finalized JSON as OpenAI SSE
+ * (the dominant client format for Cascade); otherwise return the JSON Response.
+ * Fail-safe: if JSON parsing or adaptation throws, return the original JSON
+ * Response (preserving an observable success rather than masking it as a 502).
+ */
+async function adaptCascadeResponse(result, clientBody, log, label) {
+  if (!clientBody?.stream) return result.response;
+  // Best-effort: convert the finalized OpenAI chat.completion JSON to a
+  // virtual SSE stream so a streaming client's event parser sees content.
+  // Loaded lazily to avoid circular import cycles.
+  try {
+    const json = await result.response.clone().json();
+    const { openAICompletionJsonToSSE } = await import("../utils/sse.js");
+    const sseResponse = openAICompletionJsonToSSE(json);
+    log.info("CASCADE", `${label} converted finalized JSON → SSE for stream:true client`);
+    return sseResponse;
+  } catch (err) {
+    log.warn("CASCADE", `${label} adapter failed, returning JSON fallback: ${err?.message || err}`);
+    return result.response;
+  }
+}
+
+/**
  * Handle a cascade combo: progressive escalation from cheap to capable models.
  *
  * @param {Object} options
@@ -1217,7 +1244,7 @@ export async function handleCascadeChat({ body, models, handleSingleModel, log, 
     // Final stage always returns — no confidence check needed.
     if (isFinal) {
       log.info("CASCADE", `Final stage (${model}) returning`);
-      return res.response;
+      return await adaptCascadeResponse(res, body, log, `Stage ${stage + 1} (${model})`);
     }
 
     // Extract text + parse confidence.
@@ -1236,7 +1263,7 @@ export async function handleCascadeChat({ body, models, handleSingleModel, log, 
       // Confident enough — return. The CONFIDENCE marker is a trailing line
       // that most clients will ignore; we don't re-serialize the response.
       log.info("CASCADE", `Stage ${stage + 1} confident (${confidence} ≥ ${cfg.confidenceThreshold}) — returning`);
-      return res.response;
+      return await adaptCascadeResponse(res, body, log, `Stage ${stage + 1} (${model})`);
     }
 
     // Below threshold (or unparseable) — escalate with prior answer as context.
