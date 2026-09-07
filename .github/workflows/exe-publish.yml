@@ -1,8 +1,12 @@
 name: Build Executables
 
-# Single-executable distributions (Node SEA): ExtremeRouter-<os>-<arch> per
-# platform, attached to the tag's GitHub Release. Docker images are built by
-# docker-publish.yml; this workflow runs alongside it on the same tags.
+# Single-executable distributions (Node SEA). ONE ubuntu job builds ALL host
+# exes via `build-exe.cjs --all` (downloads official node dists, postject
+# cross-injects) — per-OS runner builds proved fragile (macOS kernel-killed
+# post-injection binaries, Windows Next webpack EPERM), and SEA injection does
+# not require running the target binary. The macOS artifact is re-signed
+# ad-hoc on a real macOS runner before release (injection invalidates the
+# dist signature). Docker images are built by docker-publish.yml on the tags.
 
 on:
   push:
@@ -19,21 +23,9 @@ jobs:
     uses: ./.github/workflows/quality-gate.yml
 
   build:
-    name: SEA exe (${{ matrix.os }})${{ matrix.experimental && ' (experimental)' || '' }}
+    name: SEA exe (all hosts)
     needs: quality
-    continue-on-error: ${{ matrix.experimental || false }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            artifact: ExtremeRouter-windows-x64.exe
-            experimental: true
-          - os: ubuntu-latest
-            artifact: ExtremeRouter-linux-x64
-          - os: macos-latest
-            artifact: ExtremeRouter-macos-arm64
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -55,15 +47,13 @@ jobs:
         env:
           NEXT_TRACING_ROOT_MODE: workspace
 
-      - name: Build single executable (SEA)
-        run: node scripts/sea/build-exe.cjs
+      - name: Build all host executables (SEA cross-inject)
+        run: node scripts/sea/build-exe.cjs --all
 
-      - name: Smoke — serve and poll the dashboard
+      - name: Smoke — serve and poll the dashboard (linux exe)
         shell: bash
         run: |
-          EXT="dist-sea/${{ matrix.artifact }}"
-          [ "${{ runner.os }}" = "Windows" ] && EXT="dist-sea\\${{ matrix.artifact }}"
-          PORT=20199 "$EXT" --serve &
+          PORT=20199 dist-sea/ExtremeRouter-linux-x64 --serve &
           SERVER_PID=$!
           for i in $(seq 1 60); do
             if curl -fsS -o /dev/null "http://127.0.0.1:20199/"; then
@@ -81,21 +71,59 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: dist-sea/${{ matrix.artifact }}
+          name: sea-exes
+          path: |
+            dist-sea/ExtremeRouter-windows-x64.exe
+            dist-sea/ExtremeRouter-linux-x64
+            dist-sea/ExtremeRouter-macos-arm64
+          if-no-files-found: error
+          retention-days: 7
+
+  sign-macos:
+    name: Re-sign macOS exe (ad-hoc)
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sea-exes
+          path: dist-sea
+
+      - name: Strip invalidated signature, re-sign ad-hoc, smoke --version
+        run: |
+          BIN=dist-sea/ExtremeRouter-macos-arm64
+          chmod +x "$BIN"
+          codesign --remove-signature "$BIN" || true
+          codesign -s - "$BIN"
+          codesign --verify "$BIN"
+          OUT=$("$BIN" --version) || {
+            echo "::error::macOS exe failed after re-sign"
+            exit 1
+          }
+          echo "version output: $OUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sea-exes-signed
+          path: dist-sea/ExtremeRouter-macos-arm64
           if-no-files-found: error
           retention-days: 7
 
   release:
     name: Attach executables to release
-    needs: build
+    needs: [build, sign-macos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
+          name: sea-exes
           path: dist-sea
-          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sea-exes-signed
+          path: dist-sea
 
       - name: Attach to GitHub release
         env:
