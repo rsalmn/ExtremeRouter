@@ -101,6 +101,13 @@ function main() {
     }
   }
 
+  // 4b. macOS: the setup-node binary is Apple-signed - injecting into a signed
+  // Mach-O invalidates the signature and the kernel SIGKILLs it on exec
+  // (smoke --version dies silently). Remove the signature first, re-sign after.
+  if (plat === "darwin") {
+    run("codesign", ["--remove-signature", "--force", outPath]);
+  }
+
   // 5. Inject the blob
   // Node >= 20.12 refuses to spawn .cmd shims without a shell (EINVAL, CVE
   // 2024-27980) — route npx through cmd /c with argv-array quoting intact.

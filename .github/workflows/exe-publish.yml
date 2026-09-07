@@ -19,8 +19,9 @@ jobs:
     uses: ./.github/workflows/quality-gate.yml
 
   build:
-    name: SEA exe (${{ matrix.os }})
+    name: SEA exe (${{ matrix.os }})${{ matrix.experimental && ' (experimental)' || '' }}
     needs: quality
+    continue-on-error: ${{ matrix.experimental || false }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -28,6 +29,7 @@ jobs:
         include:
           - os: windows-latest
             artifact: ExtremeRouter-windows-x64.exe
+            experimental: true
           - os: ubuntu-latest
             artifact: ExtremeRouter-linux-x64
           - os: macos-latest

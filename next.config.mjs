@@ -32,6 +32,12 @@ const nextConfig = {
     serverComponentsHmrCache: true,
   },
   webpack: (config, { isServer }) => {
+    // Windows CI: Next 16's webpack PackFileCacheStrategy crashes the build
+    // ("No such label 'restore cache container'") reading its own persistent
+    // cache. Disable it there only — linux/mac builds keep the cache.
+    if (process.platform === "win32" && process.env.CI) {
+      config.cache = false;
+    }
     // Ignore fs/path modules in browser bundle
     if (!isServer) {
       config.resolve.fallback = {
