@@ -33,6 +33,7 @@
     "test": "vitest run --config tests/vitest.config.js --update=false",
     "test:live": "vitest run --config tests/vitest.live.config.js",
     "security:audit": "npm audit --omit=dev --audit-level=high",
+    "audit:capabilities": "node scripts/audit-capabilities.mjs",
     "quality": "npm run lint && npm test && npm run security:audit",
     "cli:pack": "npm --prefix cli run pack:cli",
     "cli:publish": "npm --prefix cli run publish:cli"

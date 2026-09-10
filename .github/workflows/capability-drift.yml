@@ -1,0 +1,62 @@
+name: Capability Drift Report
+
+# Advisory weekly drift check of the hand-written capability tables against
+# models.dev (offline mode — no secrets, network fetch of a public endpoint
+# only). NOT a gate: models.dev is a weaker source of truth than the
+# hand-written entries (that is precisely why the tables exist), so this job
+# always succeeds; humans read the artifact and fix real drift manually.
+# Live gateway comparison (MISMATCH/STALE_KEY/MISSING_ENTRY) is operator-run:
+#   npm run audit:capabilities -- --live  (with AUDIT_CAPS_<PROVIDER>_KEY set)
+
+on:
+  schedule:
+    - cron: "17 4 * * 1" # Mondays 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift-report:
+    name: Capability drift (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Audit (offline)
+        run: |
+          npm run audit:capabilities -- > capability-drift.txt
+          npm run audit:capabilities -- --json > capability-drift.json
+
+      - name: Annotate + upload report
+        run: |
+          node -e '
+            const r = require("./capability-drift.json");
+            let n = 0;
+            for (const [pid, findings] of Object.entries(r.groups || {})) {
+              for (const f of findings) {
+                n++;
+                console.log(`::warning file=open-sse/providers/capabilities.js::[${pid}] ${f.where} ${f.field || ""}: table=${JSON.stringify(f.static)} vs ${f.sourceName || ""}=${JSON.stringify(f.liveValue)} (LOW_CONFIDENCE_SOURCE — human review only)`);
+              }
+            }
+            console.log(`capability-drift: ${n} advisory findings (mode=${r.mode})`);
+          '
+          cp .cache/models.dev-audit.json capability-catalog-cache.json 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: capability-drift-report
+          path: |
+            capability-drift.txt
+            capability-drift.json
+          if-no-files-found: warn
+          retention-days: 30

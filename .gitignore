@@ -112,3 +112,6 @@ outputs/
 dist-sea/
 sea-config.json
 sea-prep.blob
+
+# capability audit cache
+.cache/
