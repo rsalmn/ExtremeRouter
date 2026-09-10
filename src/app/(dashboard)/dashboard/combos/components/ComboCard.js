@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Card, Badge, Select, ModelSelectModal, CapacityBadges } from "@/shared/components";
+import ProviderIcon from "@/shared/components/ProviderIcon";
+import { getProviderIconPath } from "@/shared/utils/providerIcon";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers";
 import { classifyComboThinking } from "@/shared/utils/comboThinking";
 import { STRATEGY_OPTIONS, getStrategyMeta, getStrategyLabel } from "./helpers";
@@ -100,7 +102,7 @@ function filterControlEligible(providers) {
 //
 // Collapsed: icon + name + model chips + strategy badge + action buttons
 // Expanded: full model list + strategy config + fusion/swarm role pickers
-export default function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
+export default function ComboCard({ combo, modelCaps = {}, providerByRef = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
   const [expanded, setExpanded] = useState(false);
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const [showSwarmRoleSelect, setShowSwarmRoleSelect] = useState(null);
@@ -253,6 +255,14 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
               ) : (
                 models.slice(0, 3).map((model, index) => (
                   <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
+                    {providerByRef[model] && (
+                      <ProviderIcon
+                        src={getProviderIconPath(providerByRef[model])}
+                        alt={providerByRef[model]}
+                        size={12}
+                        fallbackText={providerByRef[model].slice(0, 2).toUpperCase()}
+                      />
+                    )}
                     <span className="truncate max-w-[120px]">{model}</span>
                     {modelCaps[model] && <CapacityBadges caps={modelCaps[model]} size={11} />}
                   </code>
@@ -315,6 +325,14 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
               {models.map((model, index) => (
                 <div key={index} className="flex items-center gap-2 rounded px-2 py-1 bg-black/[0.02] dark:bg-white/[0.02]">
                   <span className="text-[10px] font-medium text-text-muted w-4 text-center">{index + 1}</span>
+                  {providerByRef[model] ? (
+                    <ProviderIcon
+                      src={getProviderIconPath(providerByRef[model])}
+                      alt={providerByRef[model]}
+                      size={14}
+                      fallbackText={providerByRef[model].slice(0, 2).toUpperCase()}
+                    />
+                  ) : <span className="w-[14px] shrink-0" aria-hidden />}
                   <code className="min-w-0 flex-1 truncate font-mono text-xs text-text-main">{model}</code>
                   {modelCaps[model] && <CapacityBadges caps={modelCaps[model]} size={11} />}
                 </div>

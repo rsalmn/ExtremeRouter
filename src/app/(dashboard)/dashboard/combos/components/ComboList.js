@@ -6,7 +6,7 @@ import ComboCard from "./ComboCard";
 import { FILTER_OPTIONS, SORT_OPTIONS, filterCombos, sortCombos } from "./helpers";
 
 // ComboList — searchable, filterable combo list with redesigned expandable cards.
-export default function ComboList({ combos, modelCaps, activeProviders, comboStrategies, copied, copy, onEdit, onDelete, onSetStrategy, onCreate }) {
+export default function ComboList({ combos, modelCaps, providerByRef = {}, activeProviders, comboStrategies, copied, copy, onEdit, onDelete, onSetStrategy, onCreate }) {
   const [search, setSearch] = useState("");
   const [strategyFilter, setStrategyFilter] = useState("all");
   const [sortBy, setSortBy] = useState("name");
@@ -90,6 +90,7 @@ export default function ComboList({ combos, modelCaps, activeProviders, comboStr
               key={combo.id}
               combo={combo}
               modelCaps={modelCaps}
+              providerByRef={providerByRef}
               activeProviders={activeProviders}
               copied={copied}
               onCopy={copy}

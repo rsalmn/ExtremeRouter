@@ -17,7 +17,7 @@ import { VALID_NAME_REGEX, STRATEGY_OPTIONS, getStrategyMeta } from "./helpers";
 // - Drag-to-reorder model list with numbered priority indicators
 // - Empty state with icon illustration
 // - Cleaner visual hierarchy with section headers
-export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, modelCaps = {}, kindFilter = null, comboStrategies = {} }) {
+export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, modelCaps = {}, providerByRef = {}, kindFilter = null, comboStrategies = {} }) {
   // Effective strategy for the combo being edited. The runtime resolves the
   // record's strategyConfig as BASE and settings.comboStrategies[name] as
   // OVERRIDE with settings winning (resolveComboStrategyConfig in
@@ -239,6 +239,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
                           index={index}
                           model={model}
                           modelCaps={modelCaps}
+                          providerByRef={providerByRef}
                           isFirst={index === 0}
                           isLast={index === modelItems.length - 1}
                           onEdit={(newVal) => {

@@ -4,11 +4,14 @@ import { useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { CapacityBadges } from "@/shared/components";
+import ProviderIcon from "@/shared/components/ProviderIcon";
+import { getProviderIconPath } from "@/shared/utils/providerIcon";
 
 // ModelItem — drag-and-drop sortable, inline-editable model row.
 // Redesigned with cleaner visual hierarchy: priority number, drag handle,
-// inline edit, capacity badges, and priority arrows.
-export default function ModelItem({ id, index, model, isFirst, isLast, modelCaps, onEdit, onMoveUp, onMoveDown, onRemove }) {
+// provider icon (resolved server-side by exact member string), inline edit,
+// capacity badges, and priority arrows.
+export default function ModelItem({ id, index, model, isFirst, isLast, modelCaps, providerByRef = {}, onEdit, onMoveUp, onMoveDown, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -76,6 +79,14 @@ export default function ModelItem({ id, index, model, isFirst, isLast, modelCaps
           onClick={() => setEditing(true)}
           title="Click to edit"
         >
+          {providerByRef[model] ? (
+            <ProviderIcon
+              src={getProviderIconPath(providerByRef[model])}
+              alt={providerByRef[model]}
+              size={14}
+              fallbackText={providerByRef[model].slice(0, 2).toUpperCase()}
+            />
+          ) : <span className="w-[14px] shrink-0" aria-hidden />}
           <code className="min-w-0 flex-1 truncate font-mono text-xs text-text-main">{model}</code>
           {modelCaps?.[model] && <CapacityBadges caps={modelCaps[model]} size={11} />}
         </div>

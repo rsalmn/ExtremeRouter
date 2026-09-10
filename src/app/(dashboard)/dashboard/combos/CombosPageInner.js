@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button, CardSkeleton, ConfirmModal, PageHeader, SegmentedControl } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { useModelRefs } from "@/shared/hooks/useModelRefs";
 import ComboOverview from "./components/ComboOverview";
 import ComboList from "./components/ComboList";
 import ComboTemplatesTab from "./components/ComboTemplatesTab";
@@ -32,6 +33,18 @@ export default function CombosPageInner() {
   const [modelIndex, setModelIndex] = useState({});
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
+
+  // Combo members are free-form strings ("alias/model", "provider/nested/model",
+  // bare ids, dynamic-provider models) that do NOT necessarily match /api/models
+  // fullModel keys. Resolve them server-side (single source of truth) so every
+  // row gets its capability badges + provider icon; the static map still wins
+  // for exact matches.
+  const memberRefs = useMemo(
+    () => (combos || []).flatMap((c) => (Array.isArray(c?.models) ? c.models : [])),
+    [combos]
+  );
+  const { capsByRef, providerByRef } = useModelRefs(memberRefs);
+  const resolvedModelCaps = useMemo(() => ({ ...modelCaps, ...capsByRef }), [modelCaps, capsByRef]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -267,7 +280,8 @@ export default function CombosPageInner() {
       {activeTab === "combos" && (
         <ComboList
           combos={combos}
-          modelCaps={modelCaps}
+          modelCaps={resolvedModelCaps}
+          providerByRef={providerByRef}
           activeProviders={activeProviders}
           comboStrategies={comboStrategies}
           copied={copied}
@@ -294,7 +308,7 @@ export default function CombosPageInner() {
       )}
 
       {/* Create Modal */}
-      <ComboFormModal key="create" isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} onSave={handleCreate} activeProviders={activeProviders} modelCaps={modelCaps} />
+      <ComboFormModal key="create" isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} onSave={handleCreate} activeProviders={activeProviders} modelCaps={resolvedModelCaps} providerByRef={providerByRef} />
 
       {/* Edit Modal — comboStrategies passed so the strategy picker shows the
           EFFECTIVE strategy (settings override wins), matching the runtime
@@ -306,7 +320,8 @@ export default function CombosPageInner() {
         onClose={() => setEditingCombo(null)}
         onSave={(data) => handleUpdate(editingCombo.id, data)}
         activeProviders={activeProviders}
-        modelCaps={modelCaps}
+        modelCaps={resolvedModelCaps}
+        providerByRef={providerByRef}
         comboStrategies={comboStrategies}
       />
 
