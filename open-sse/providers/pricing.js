@@ -470,17 +470,18 @@ export const PROVIDER_PRICING = {
   },
   // Bynara (bynara) — router.bynara.id pay-as-you-go rates (USD per 1M tokens,
   // from their pricing page, $1 = Rp17.873). "free"-suffixed aliases are billed
-  // low, not $0 (e.g. Ling 3.0 Flash Free = $0.01/$0.02). Grok 4.5 Free is not
-  // listed on the pricing page — uses the Grok 4.5 rate.
+  // low, not $0 (e.g. Ling 3.0 Flash fin Free = $0.01/$0.02). Grok 4.5 Free is
+  // not listed on the pricing page — uses the Grok 4.5 rate. Keys must match
+  // the live /v1/model ids (2026-09-10 capture).
   bynara: {
     "agnes-2.0-flash":     { input: 0.03, output: 0.11 },
     "agnes-2.5-flash":     { input: 0.06, output: 0.28 },
     "grok-4.5-free":       { input: 0.40, output: 0.64 },
     "laguna-s-2.1":        { input: 0.00, output: 0.00 },
-    "ling-3.0-flash-free": { input: 0.01, output: 0.02 },
+    "ling-3.0-flash-fin-free":        { input: 0.01, output: 0.02 },
     "mistral-large":       { input: 0.15, output: 0.45 },
     "mistral-medium-3-5":  { input: 0.30, output: 1.51 },
-    "nemotron-3-ultra":    { input: 0.00, output: 0.00 },
+    "nemotron-3.5-lightning-free":    { input: 0.00, output: 0.00 },
     "stepfun-3.7-flash":   { input: 0.04, output: 0.23 },
     "tencent-hy3-free":    { input: 0.03, output: 0.11 },
   },

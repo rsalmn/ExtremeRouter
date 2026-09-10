@@ -2,20 +2,22 @@ import { describe, it, expect } from "vitest";
 import { FILTERS } from "../../src/app/api/providers/suggested-models/filters.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 
-// Real /v1/models payload shape returned by router.bynara.id.
+// Real /v1/models payload shape returned by router.bynara.id (ids/values
+// match the live capture of 2026-09-10).
 const BYNARA_PAYLOAD = {
   object: "list",
   data: [
     { id: "agnes-2.0-flash", object: "model", owned_by: "byNara", context_window: 512000, weight: 0.1, vision: true, reasoning: true },
     { id: "agnes-2.5-flash", object: "model", owned_by: "byNara", context_window: 512000, weight: 0.2, vision: true, reasoning: true },
-    { id: "glm-5.3-flash-free", object: "model", owned_by: "byNara", context_window: 128000, weight: 1, vision: true, reasoning: true },
+    { id: "glm-5.3-flash-free", object: "model", owned_by: "byNara", context_window: 1000000, weight: 1, vision: true, reasoning: true },
+    { id: "glm-5.3-free", object: "model", owned_by: "byNara", context_window: 128000, weight: 1, reasoning: true },
     { id: "grok-4.5-free", object: "model", owned_by: "byNara", context_window: 212000, weight: 1, vision: true },
     { id: "laguna-s-2.1", object: "model", owned_by: "byNara", context_window: 262000, weight: 0.5, reasoning: true },
-    { id: "ling-3.0-flash-free", object: "model", owned_by: "byNara", context_window: 262000, weight: 1, reasoning: true },
+    { id: "ling-3.0-flash-fin-free", object: "model", owned_by: "byNara", context_window: 262000, weight: 1 },
     { id: "minimax-m3-free", object: "model", owned_by: "byNara", context_window: 1000000, weight: 1, vision: true, reasoning: true },
     { id: "mistral-large", object: "model", owned_by: "byNara", context_window: 252000, weight: 1 },
     { id: "mistral-medium-3-5", object: "model", owned_by: "byNara", context_window: 256000, weight: 1, vision: true },
-    { id: "nemotron-3-ultra", object: "model", owned_by: "byNara", context_window: 1000000, weight: 0.5 },
+    { id: "nemotron-3.5-lightning-free", object: "model", owned_by: "byNara", context_window: 261996, weight: 0.5 },
     { id: "qwen-3.8-max-free", object: "model", owned_by: "byNara", context_window: 262144, weight: 1 },
     { id: "qwen3.8-27b", object: "model", owned_by: "byNara", context_window: 1000000, weight: 1, reasoning: true },
     { id: "stepfun-3.7-flash", object: "model", owned_by: "byNara", context_window: 262000, weight: 1, vision: true, reasoning: true },
@@ -28,7 +30,7 @@ const BYNARA_PAYLOAD = {
 describe("bynara modelsFetcher parser", () => {
   it("absorbs context_window, vision and reasoning from /v1/models", () => {
     const out = FILTERS.bynara(BYNARA_PAYLOAD);
-    expect(out).toHaveLength(16);
+    expect(out).toHaveLength(17);
 
     const agnes = out.find((m) => m.id === "agnes-2.0-flash");
     expect(agnes.contextLength).toBe(512000);
@@ -36,8 +38,13 @@ describe("bynara modelsFetcher parser", () => {
     expect(agnes.reasoning).toBe(true);
     expect(agnes.weight).toBe(0.1);
 
-    const nemotron = out.find((m) => m.id === "nemotron-3-ultra");
-    expect(nemotron.contextLength).toBe(1000000);
+    const glmFlash = out.find((m) => m.id === "glm-5.3-flash-free");
+    expect(glmFlash.contextLength).toBe(1000000);
+    expect(glmFlash.vision).toBe(true);
+    expect(glmFlash.reasoning).toBe(true);
+
+    const nemotron = out.find((m) => m.id === "nemotron-3.5-lightning-free");
+    expect(nemotron.contextLength).toBe(261996);
     expect(nemotron.vision).toBe(false);
     expect(nemotron.reasoning).toBe(false);
 

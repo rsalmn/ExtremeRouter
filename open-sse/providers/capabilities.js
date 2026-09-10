@@ -206,23 +206,35 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
   },
   // Bynara (router.bynara.id) — deterministic runtime mirror of the gateway's
-  // /v1/models metadata (context_window, vision, reasoning). The live values
-  // are also absorbed automatically by the bynara modelsFetcher parser
-  // (suggested-models/filters.js) for the providers page; this static block
-  // keeps getCapabilitiesForModel correct for picker/combo/playground even
-  // before/without that fetch. Reasoning models speak OpenAI reasoning_effort
-  // (the gateway's primary chat format).
+  // /v1/models metadata (context_window, vision, reasoning). Live-verified
+  // against a real-key /v1/models capture (2026-09-10): ids must match the
+  // gateway exactly or the override is dead (falls through to
+  // DEFAULT_CAPABILITIES). The live values are also absorbed automatically by
+  // the bynara modelsFetcher parser (suggested-models/filters.js) for the
+  // providers page; this static block keeps getCapabilitiesForModel correct
+  // for picker/combo/playground even before/without that fetch. Reasoning
+  // models speak OpenAI reasoning_effort (the gateway's primary chat format).
   bynara: {
     "agnes-2.0-flash":        { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 512000 },
     "agnes-2.5-flash":        { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 512000 },
-    "glm-5.3-flash-free":     { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 128000 },
+    // 1M context per live catalog. The old 128000 starved resolveOutputBudget
+    // (availableContext<=0 → max_tokens:0 on the wire → provider rejection)
+    // for large Swarm-panel prompts on this model.
+    "glm-5.3-flash-free":     { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000 },
+    "glm-5.3-free":           { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 },
     "grok-4.5-free":          { vision: true, contextWindow: 212000 },
     "laguna-s-2.1":           { reasoning: true, thinkingFormat: "openai", contextWindow: 262000 },
-    "ling-3.0-flash-free":    { reasoning: true, thinkingFormat: "openai", contextWindow: 262000 },
+    // Live id is ling-3.0-flash-fin-free ("fin" = fine-tune); no vision/reasoning
+    // field in the live catalog (docs list no reasoning support) — reasoning
+    // stays at the default false. The old "ling-3.0-flash-free" key never matched.
+    "ling-3.0-flash-fin-free": { contextWindow: 262000 },
     "minimax-m3-free":        { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000 },
     "mistral-large":          { contextWindow: 252000 },
     "mistral-medium-3-5":     { vision: true, contextWindow: 256000 },
-    "nemotron-3-ultra":       { contextWindow: 1000000 },
+    // Live id is nemotron-3.5-lightning-free (context_window 261996 → rounded to
+    // the 262000 convention used by the other mid-tier bynara entries). The old
+    // "nemotron-3-ultra" key was dead AND 1M (never true for this model).
+    "nemotron-3.5-lightning-free": { contextWindow: 262000 },
     "qwen-3.8-max-free":      { contextWindow: 262144 },
     "qwen3.8-27b":            { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000 },
     "qwen3.8-flash-free":     { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000 },
