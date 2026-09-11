@@ -181,6 +181,8 @@ export const MODEL_PRICING = {
   "hy4-preview":                  { input: 0,     output: 0 },
   "hy4-preview-x":                { input: 0,     output: 0 },
   "hy3":                          { input: 0,     output: 0 },
+  // LongCat-2.0 (Meituan) — OpenCode Go / zenmux rate ($0.30·$1.20 per 1M).
+  "longcat-2.0":                  { input: 0.30,  output: 1.20,  cached: 0.006,  reasoning: 1.20,   cache_creation: 0.30  },
   "mimo-auto":                    { input: 0,     output: 0 },
   // Muse Spark 1.3 contributor — OpenCode Go reseller lane; same contributor-tier
   // rates as meta-ai's muse-spark-1.2-contributor (data-sharing tier).
@@ -741,6 +743,22 @@ export const PROVIDER_PRICING = {
     "laguna-s-2.1-free": { input: 0, output: 0, cached: 0 },
     "nemotron-3.5-lightning-free": { input: 0, output: 0, cached: 0 },
     "x-preview-f-free": { input: 0, output: 0, cached: 0 },
+  },
+  // OpenCode Go (opencode-go) — $10/mo subscription. Rates from
+  // https://opencode.ai/docs/go/ usage table (USD per 1M tokens; DeepSeek
+  // off-peak). Overrides canonical MODEL_PRICING where the Go lane charges
+  // differently (e.g. gpt-5.6-luna $0.20·$1.20 vs Codex $8·$32).
+  "opencode-go": {
+    "glm-5.3":              { input: 1.40,  output: 4.40,  cached: 0.26,  reasoning: 4.40 },
+    "kimi-k3":              { input: 3.00,  output: 15.00, cached: 0.30,  reasoning: 15.00 },
+    "longcat-2.0":          { input: 0.30,  output: 1.20,  cached: 0.006, reasoning: 1.20 },
+    "deepseek-v4.1-flash":  { input: 0.15,  output: 0.60,  cached: 0.003, reasoning: 0.60 },
+    "hy4-preview":          { input: 0.834, output: 2.501, cached: 0.042, reasoning: 2.501 },
+    "hy3":                  { input: 0.14,  output: 0.58,  cached: 0.035, reasoning: 0.58 },
+    "qwen3.8-max":          { input: 2.00,  output: 6.00,  cached: 0.25,  reasoning: 6.00 },
+    "qwen3.8-flash":        { input: 0.15,  output: 0.47,  cached: 0.016, reasoning: 0.47 },
+    "grok-4.6":             { input: 2.00,  output: 6.00,  cached: 0.50,  reasoning: 6.00 },
+    "gpt-5.6-luna":         { input: 0.20,  output: 1.20,  cached: 0.02,  reasoning: 1.20 },
   },
   "kenari": {
     "claude-opus-4-7": { input: 0, output: 0 },

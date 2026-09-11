@@ -52,7 +52,6 @@ export default defineConfig({
       "**/oauth-cursor-auto-import.test.js", // error message format changed upstream
       "**/force-stream-config.test.js",     // commandcode forceStream + headroom mock issues
       "**/image-fetch-hardening.test.js",   // fetch mock incompatibility
-      "**/opencode-go-models.test.js",      // model list expanded since test written
       "**/reasoningContentInjector.test.js", // import chain @/shared resolution in CI
       "**/translator-request-normalization.test.js", // flatten behavior changed upstream
       // More pre-existing broken tests:

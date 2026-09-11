@@ -33,13 +33,27 @@ export function findModelName(aliasOrId, modelId) {
   return found?.name || modelId;
 }
 
+// Any registry id / alias / aliases[] token → PROVIDER_MODELS key (alias||id).
+// Secondary aliases like "ocg" are not themselves PROVIDER_MODELS keys.
+const MODELS_KEY_BY_TOKEN = (() => {
+  const map = {};
+  for (const entry of REGISTRY) {
+    const key = entry.alias || entry.id;
+    map[entry.id] = key;
+    if (entry.alias) map[entry.alias] = key;
+    for (const a of entry.aliases || []) map[a] = key;
+  }
+  return map;
+})();
+
 export function getModelTargetFormat(aliasOrId, modelId) {
   // Muse Spark family is Responses-only on every OpenCode lane (zen + zen/go).
   // Alias-scoped so muse-spark-web (cookie bridge, chat-only) stays untouched.
   if ((!aliasOrId || aliasOrId === "oc" || aliasOrId === "opencode" || aliasOrId === "ocg" || aliasOrId === "opencode-go") && isMuseSparkModel(modelId)) {
     return FORMATS.OPENAI_RESPONSES;
   }
-  const models = PROVIDER_MODELS[aliasOrId];
+  const key = MODELS_KEY_BY_TOKEN[aliasOrId] || aliasOrId;
+  const models = PROVIDER_MODELS[key];
   if (!models) return null;
   return modelTargetFormat(models.find(m => m.id === modelId));
 }

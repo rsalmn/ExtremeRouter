@@ -703,6 +703,12 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*step-3.7*",      caps: { reasoning: true, thinkingFormat: "step", thinkingLevels: ["low", "medium", "high"], contextWindow: 256000, maxOutput: 256000 } },
   { pattern: "*hunyuan*",       caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "hy3*",            caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
+  // Hy4 preview (Tencent Hunyuan, OpenCode Go / CodeBuddy / WorkBuddy).
+  // Vendor reports vision + always-on reasoning; large context/output.
+  { pattern: "hy4*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 64000 } },
+  // LongCat-2.0 (Meituan) — OpenCode Go cheap coding lane. Large context
+  // (Go usage table: ~89K cached tokens/request); reasoning format unknown.
+  { pattern: "*longcat*",       caps: { contextWindow: 131072, maxOutput: 32768 } },
   { pattern: "*step-*",         caps: { reasoning: true, thinkingFormat: "step", contextWindow: 128000 } },
   // NVIDIA Nemotron / Inclusion Ling — OpenAI-compatible reasoning formats.
   { pattern: "*nemotron*",      caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },

@@ -1,5 +1,6 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { getModelTargetFormat } from "../config/providerModels.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
@@ -11,8 +12,9 @@ import {
   ensureResponsesObjectProperties,
 } from "../translator/formats/responsesApi.js";
 
-// Muse Spark lives on the Go lane's Responses endpoint — /chat/completions
-// 500s for the family (same upstream behavior as opencode's free lane).
+// Responses-only models live on the Go lane's /responses endpoint —
+// /chat/completions 500s for Muse Spark; Grok 4.6 / GPT 5.6 Luna are
+// Responses-API upstreams on the Go subscription (opencode.ai/docs/go).
 const RESPONSES_BASE_URL = "https://opencode.ai/zen/go/v1/responses";
 // Strict Responses upstreams reject nameless/overlong tool names (#444).
 const MAX_TOOL_NAME_LEN = 128;
@@ -22,6 +24,8 @@ const MESSAGES_FORMAT_MODELS = new Set([
   "minimax-m3",
   "minimax-m2.7",
   "minimax-m2.5",
+  "qwen3.8-max",
+  "qwen3.8-flash",
   "qwen3.7-max",
   "qwen3.7-plus",
   "qwen3.6-plus",
@@ -73,7 +77,11 @@ function baseModelId(model) {
 }
 
 function isResponsesModel(model) {
-  return isMuseSparkModel(baseModelId(model));
+  const id = baseModelId(model);
+  // Registry targetFormat is the source of truth (muse-spark, grok-4.6,
+  // gpt-5.6-luna). isMuseSparkModel catches passthrough discoveries that
+  // are not in the static catalog.
+  return getModelTargetFormat("opencode-go", id) === "openai-responses" || isMuseSparkModel(id);
 }
 
 // Flatten Chat Completions tool declarations into the Responses flat shape and
