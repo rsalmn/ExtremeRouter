@@ -4,11 +4,15 @@
 import runwayml from "./runwayml.js";
 import bynara from "./bynara.js";
 import xai from "./xai.js";
+import openrouter from "./openrouter.js";
+import vertex from "./vertex.js";
 
 const ADAPTERS = {
   runwayml,
   bynara,
   xai,
+  openrouter,
+  vertex,
 };
 
 export function getVideoAdapter(provider) {

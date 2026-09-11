@@ -44,8 +44,8 @@ export async function handleVideoGenerationCore({
 }) {
   const { provider, model } = modelInfo;
 
-  if (!body.prompt || typeof body.prompt !== "string" || !body.prompt.trim()) {
-    return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: prompt");
+  if (!body || typeof body !== "object") {
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Invalid request body");
   }
 
   // Model-level capability gate: only models declared `kind: "video"` are
@@ -67,10 +67,21 @@ export async function handleVideoGenerationCore({
     );
   }
 
+  // Prompt is required unless the adapter declares I2V (e.g. Veo).
+  if (!adapter.promptOptional) {
+    if (!body.prompt || typeof body.prompt !== "string" || !body.prompt.trim()) {
+      return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: prompt");
+    }
+  } else if (!body.prompt && !body.image && !body.image_url) {
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: prompt or image");
+  }
+
   const buildRequest = async () => {
-    const u = adapter.buildUrl(model, credentials);
+    // buildUrl may be async (Vertex mints an OAuth token + project-scoped URL).
+    // Rebuilt per attempt so the 401 → refresh → retry path picks up new credentials.
+    const u = await adapter.buildUrl(model, credentials, body);
     const rb = await adapter.buildBody(model, body);
-    const h = adapter.buildHeaders(credentials, rb, model, body);
+    const h = await adapter.buildHeaders(credentials, rb, model, body);
     return { url: u, headers: h, requestBody: rb };
   };
 
