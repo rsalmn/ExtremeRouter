@@ -202,7 +202,10 @@ export const PROVIDER_CAPABILITIES = {
     "kimi-k2.5":          { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 164000, maxOutput: 32000 },
     "hy3-preview":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 192000, maxOutput: 64000 },
     "deepseek-v4-pro":    { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
-    "deepseek-v4-flash":  { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
+    // deepseek-v4-flash → deepseek-v4.1-flash (product-config swap). Server
+    // table: maxOutput 50000 → 128000; contextWindow stays 1M. Effort tiers
+    // are low/high/xhigh (no minimal/medium) on the CodeBuddy CN gateway.
+    "deepseek-v4.1-flash": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["low", "high", "xhigh"], contextWindow: 1000000, maxOutput: 128000 },
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
   },
   // Bynara (router.bynara.id) — deterministic runtime mirror of the gateway's

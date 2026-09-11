@@ -165,4 +165,20 @@ describe("CodeBuddy CN catalog swap (port of OmniRoute #10356)", () => {
     expect(caps.maxOutput).toBe(64000);
     expect(caps.thinkingCanDisable).toBe(false);
   });
+
+  it("codebuddy-cn swaps deepseek-v4-flash → deepseek-v4.1-flash (product-config contract)", () => {
+    const ids = modelIds("codebuddy-cn");
+    expect(ids).not.toContain("deepseek-v4-flash");
+    expect(ids).toContain("deepseek-v4.1-flash");
+  });
+
+  it("codebuddy-cn deepseek-v4.1-flash caps: 1M context, 128k output, low/high/xhigh", () => {
+    const caps = getCapabilitiesForModel("codebuddy-cn", "deepseek-v4.1-flash");
+    expect(caps.reasoning).toBe(true);
+    expect(caps.thinkingFormat).toBe("openai");
+    expect(caps.thinkingCanDisable).toBe(false);
+    expect(caps.thinkingLevels).toEqual(["low", "high", "xhigh"]);
+    expect(caps.contextWindow).toBe(1000000);
+    expect(caps.maxOutput).toBe(128000);
+  });
 });
