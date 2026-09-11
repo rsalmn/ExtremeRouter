@@ -44,16 +44,47 @@ export default {
     // Standard models (free tier)
     { id: "agnes-2.5-flash", name: "Agnes 2.5 Flash", contextWindow: 524288, maxOutput: 65536 },
     { id: "agnes-2.0", name: "Agnes 2.0", contextWindow: 524288, maxOutput: 65536 },
+    // Text/image-to-video. Create: POST /v1/videos; poll: GET /agnesapi?video_id=.
+    // v2.0 uses height/width/num_frames; 2.5 uses mode/seconds/size/aspect_ratio.
+    // Adapter: handlers/videoProviders/agnes-api.js.
+    {
+      id: "agnes-video-v2.0",
+      name: "Agnes Video 2.0",
+      kind: "video",
+      params: ["duration", "aspect_ratio", "resolution", "image", "mode", "width", "height", "num_frames", "frame_rate", "num_inference_steps", "seed", "negative_prompt"],
+    },
+    // 2.5: text | keyframe | reference; poll must include model_name.
+    // Docs: https://www.agnes-ai.com/en/docs/agnes-video-25
+    {
+      id: "agnes-video-2.5",
+      name: "Agnes Video 2.5",
+      kind: "video",
+      params: ["duration", "seconds", "aspect_ratio", "size", "resolution", "mode", "image", "images", "audios", "videos", "first_frame", "last_frame", "seed"],
+    },
+    // 2.5-flash: same API, size fixed to 720P, ≤5 images, ≤3 audios, no videos.
+    // Docs: https://www.agnes-ai.com/en/docs/agnes-video-25-flash
+    {
+      id: "agnes-video-2.5-flash",
+      name: "Agnes Video 2.5 Flash",
+      kind: "video",
+      params: ["duration", "seconds", "aspect_ratio", "size", "resolution", "mode", "image", "images", "audios", "first_frame", "last_frame", "seed"],
+    },
   ],
   passthroughModels: true,
   modelsFetcher: {
     url: "https://apihub.agnes-ai.com/v1/models",
     type: "openai",
   },
-  // Image generation via separate endpoint.
-  serviceKinds: ["llm", "image"],
+  // Image + video generation via separate endpoints.
+  serviceKinds: ["llm", "image", "video"],
   imageConfig: {
     baseUrl: "https://apihub.agnes-ai.com/v1/images/generations",
     bodyFields: ["model", "prompt", "n", "size", "response_format"],
+  },
+  // Video: create POST /v1/videos → { video_id }; poll GET /agnesapi?video_id=[&model_name=].
+  videoConfig: {
+    baseUrl: "https://apihub.agnes-ai.com/v1/videos",
+    pollUrl: "https://apihub.agnes-ai.com/agnesapi",
+    bodyFields: ["model", "prompt", "image", "mode", "seconds", "size", "aspect_ratio", "height", "width", "num_frames", "frame_rate", "num_inference_steps", "seed", "negative_prompt", "first_frame", "last_frame", "images", "audios", "videos"],
   },
 };

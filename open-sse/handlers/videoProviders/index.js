@@ -6,6 +6,7 @@ import bynara from "./bynara.js";
 import xai from "./xai.js";
 import openrouter from "./openrouter.js";
 import vertex from "./vertex.js";
+import agnesApi from "./agnes-api.js";
 
 const ADAPTERS = {
   runwayml,
@@ -13,6 +14,7 @@ const ADAPTERS = {
   xai,
   openrouter,
   vertex,
+  "agnes-api": agnesApi,
 };
 
 export function getVideoAdapter(provider) {

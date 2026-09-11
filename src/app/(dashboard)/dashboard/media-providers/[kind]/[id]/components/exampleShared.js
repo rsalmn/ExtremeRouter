@@ -79,13 +79,42 @@ export const KIND_EXAMPLE_CONFIG = {
         placeholder: "e.g. 8",
       },
       {
+        // Agnes 2.5 uses seconds as a string "4"-"12".
+        key: "seconds",
+        label: "Seconds",
+        type: "select",
+        default: "",
+        allowCustom: true,
+        placeholder: "e.g. 8",
+        options: ["", "4", "5", "6", "7", "8", "9", "10", "11", "12"],
+      },
+      {
+        // Agnes 2.5 resolution tier (720P / 1080P / 1K / 2K).
+        key: "size",
+        label: "Size",
+        type: "select",
+        default: "",
+        allowCustom: true,
+        placeholder: "e.g. 720P",
+        options: ["", "720P", "1080P", "1K", "2K"],
+      },
+      {
+        key: "mode",
+        label: "Mode",
+        type: "select",
+        default: "",
+        allowCustom: true,
+        placeholder: "text | keyframe | reference",
+        options: ["", "text", "keyframe", "reference", "t2v", "ti2vid"],
+      },
+      {
         key: "aspect_ratio",
         label: "Aspect Ratio",
         type: "select",
         default: "",
         allowCustom: true,
         placeholder: "e.g. 16:9 or 1.78",
-        options: ["", "16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9"],
+        options: ["", "21:9", "16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3"],
       },
       {
         // Runway / Bynara name this `ratio` instead of `aspect_ratio`.
