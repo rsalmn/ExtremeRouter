@@ -50,7 +50,10 @@ function buildProviderEntry(r) {
     ...(r.hasProviderSpecificData ? { hasProviderSpecificData: true } : {}),
     ...(r.noAuth ? { noAuth: true } : {}),
     ...(r.passthroughModels ? { passthroughModels: true } : {}),
-    ...(r.hasOAuth ? { hasOAuth: true } : {}),
+    // Explicit false must survive — the provider page gates isOAuth on
+    // `hasOAuth !== false` so API-key-only free/oauth-category providers
+    // (bynara, trae, cody, windsurf) never open the OAuth modal.
+    ...(r.hasOAuth === false ? { hasOAuth: false } : r.hasOAuth ? { hasOAuth: true } : {}),
     ...(r.authModes
       ? { authModes: r.authModes }
       : (r.category === "freeTier" || r.category === "apikey") ? { authModes: ["apikey"] }

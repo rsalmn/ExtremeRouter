@@ -189,7 +189,13 @@ export default function ProvidersPage() {
     for (const [key, info] of Object.entries(FREE_PROVIDERS)) {
       if (info.hidden) continue;
       if (!matchSearch(info.name, info.id, info.alias, info.uiAlias)) continue;
-      const freeAuthTypes = key === "kiro" ? ["oauth", "apikey", "api_key"] : "oauth";
+      // API-key-only free providers (bynara) store connections as authType
+      // "apikey" — querying "oauth" would show 0 connected and miss errors.
+      const freeAuthTypes = key === "kiro"
+        ? ["oauth", "apikey", "api_key"]
+        : info.hasOAuth === false
+          ? ["apikey"]
+          : "oauth";
       entries.push({
         id: key,
         name: info.name,

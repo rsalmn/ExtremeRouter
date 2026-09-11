@@ -44,7 +44,7 @@ export const SVG_ICON_IDS = new Set([
   "getgoapi", "gitlawb-gmi", "gitlawb", "helixmind", "inference-net", "kenari",
   "kilo-gateway", "lambda-ai", "laozhang", "literouter", "llamagate", "llm-kiwi",
   "llmgateway", "meganova-ai", "mixlayer", "mnn-ai", "modelscope", "naga-ac",
-  "naga-ai", "nanogpt", "nara", "navy", "nscale", "nube", "ofoxai",
+  "naga-ai", "nanogpt", "navy", "nscale", "nube", "ofoxai",
   "ollama-cloud", "openadapter", "opencode-zen", "openference-api",
   "piapi", "poixe-ai", "poolside", "predibase", "publicai", "qiniu", "regolo",
   "requesty", "routeway", "sambanova", "speka", "sumopod", "synthetic",

@@ -32,6 +32,11 @@ export default {
   category: "free",
   hasFree: true,
   authType: "apikey",
+  // API-key only. Without this the provider page treats category:"free" as
+  // OAuth (FREE_PROVIDERS ⊂ isOAuth) and fires /api/oauth/bynara/authorize →
+  // "Unknown provider: bynara" (Bynara is not in the OAuth PROVIDERS map).
+  hasOAuth: false,
+  authModes: ["apikey"],
   transport: {
     // Default = OpenAI format (most clients use this).
     baseUrl: "https://router.bynara.id/v1/chat/completions",
