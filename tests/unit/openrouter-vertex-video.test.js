@@ -189,6 +189,50 @@ describe("Vertex (Veo) video adapter", () => {
     await expect(vertex.parseResponse(jsonResponse({}), { headers: { Authorization: "Bearer t" } }))
       .rejects.toThrow(/no operation name/);
   });
+
+  // Path-traversal hardening: model ids and operation names are interpolated
+  // into the Vertex URL unescaped. A crafted segment must never rewrite the path.
+  it("rejects model ids that escape the URL path", async () => {
+    const credentials = {
+      accessToken: "ya29.pre",
+      providerSpecificData: { projectId: "p1", location: "us-central1" },
+    };
+    for (const bad of ["../../evil", "veo-3.0/../../evil", "..", "a b", "a?x=1", "a#frag", ""]) {
+      await expect(vertex.buildUrl(bad, credentials, { model: bad }))
+        .rejects.toThrow(/model id|requires a model/);
+    }
+    // Provider-prefixed form is allowed after stripping to a plain id.
+    const ok = await vertex.buildUrl("vertex/veo-3.1-generate-preview", credentials, {});
+    expect(ok).toContain("/models/veo-3.1-generate-preview:predictLongRunning");
+  });
+
+  it("rejects credential project_id / location that carry path separators", async () => {
+    await expect(vertex.buildUrl("veo-3.0-generate-001", {
+      accessToken: "t",
+      providerSpecificData: { projectId: "../evil", location: "us-central1" },
+    }, {})).rejects.toThrow(/project_id or location/);
+    await expect(vertex.buildUrl("veo-3.0-generate-001", {
+      accessToken: "t",
+      providerSpecificData: { projectId: "p1", location: "../../x" },
+    }, {})).rejects.toThrow(/project_id or location/);
+  });
+
+  it("rejects operation names that decode outside the projects/…/operations/ shape", async () => {
+    const badNames = [
+      "../../evil",
+      "projects/p/locations/l/publishers/google/models/m/operations/../../x",
+      "../../evil/operations/op",
+      "projects/p/locations/l/publishers/google/models/m/operations/op/extra",
+      "evil",
+      "",
+    ];
+    for (const name of badNames) {
+      await expect(
+        vertex.parseResponse(jsonResponse({ name }), { headers: { Authorization: "Bearer tok" } })
+      ).rejects.toThrow(/invalid operation name|no operation name/);
+      expect(global.fetch).not.toHaveBeenCalled();
+    }
+  });
 });
 
 describe("videoGenerationCore wiring for openrouter/vertex", () => {

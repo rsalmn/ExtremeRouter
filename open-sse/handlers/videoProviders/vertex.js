@@ -19,10 +19,25 @@ const CFG = PROVIDER_MEDIA.vertex?.videoConfig;
 const BASE_URL = (CFG?.baseUrl || "https://aiplatform.googleapis.com").replace(/\/$/, "");
 const DEFAULT_LOCATION = "us-central1";
 
+// Plain model id only — a path segment carrying "/" or ".." would rewrite the URL.
+const MODEL_ID_RE = /^[A-Za-z0-9._-]+$/;
+// Operation name shape: projects/{p}/locations/{l}/publishers/{pub}/models/{m}/operations/{op}.
+// Anchored and single-segment-per-field so a decoded path can never carry `..` or a
+// host-changing prefix into the request URL. (Even though ExtremeRouter polls the
+// operation name returned by Vertex — not a client-supplied job id — a crafted or
+// compromised upstream payload must still be unable to splice a path traversal.)
+const OPERATION_NAME_RE = /^projects\/[^/]+\/locations\/[^/]+\/publishers\/[^/]+\/models\/[^/]+\/operations\/[^/]+$/;
+// project/location come from credentials and are interpolated into the create URL.
+const PATH_SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
+
 function validationError(message) {
   const error = new Error(message);
   error.isValidationError = true;
   return error;
+}
+
+function modelPathOf(operationName) {
+  return operationName.slice(0, operationName.indexOf("/operations/"));
 }
 
 function resolveProjectLocation(credentials) {
@@ -37,15 +52,32 @@ function resolveProjectLocation(credentials) {
       "Vertex video requires a project_id — use Service Account JSON or set providerSpecificData.projectId"
     );
   }
+  // Reject path separators / traversal in credential-derived URL segments.
+  if (!PATH_SEGMENT_RE.test(String(projectId)) || !PATH_SEGMENT_RE.test(String(location))) {
+    throw validationError("Vertex video: invalid project_id or location");
+  }
   return { saJson, projectId, location };
 }
 
 function bareModelId(body, model) {
-  const id = body?.model || model;
+  let id = body?.model || model;
   if (!id || typeof id !== "string") {
     throw validationError("Vertex video requires a model (e.g. vertex/veo-3.1-generate-preview)");
   }
-  return id.includes("/") ? id.split("/").pop() : id;
+  // Allow exactly one provider prefix ("vertex/veo-…"). Extra slashes or embedded
+  // ".." segments would rewrite the create URL path.
+  if (id.includes("/")) {
+    const parts = id.split("/");
+    if (parts.length !== 2 || parts.some((p) => !p || p === "." || p === ".." || p.includes(".."))) {
+      throw validationError("Invalid Vertex video model id");
+    }
+    id = parts[1];
+  }
+  // Plain model id only — no path separators, and never "." / "..".
+  if (id === "." || id === ".." || !MODEL_ID_RE.test(id)) {
+    throw validationError("Invalid Vertex video model id");
+  }
+  return id;
 }
 
 /** OpenAI-ish video body → Vertex predictLongRunning body. */
@@ -144,15 +176,17 @@ export default {
       }
       throw new Error("Vertex: no operation name returned");
     }
+    // Reject any operation name that could rewrite the poll URL path
+    // (e.g. "projects/p/locations/l/publishers/google/models/m/operations/../../x").
+    if (!OPERATION_NAME_RE.test(operationName)) {
+      throw new Error("Vertex: invalid operation name");
+    }
 
     const authHeader = reqHeaders?.Authorization || reqHeaders?.authorization;
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
     if (!token) throw new Error("Vertex: missing access token for operation polling");
 
-    const modelPath = operationName.split("/operations/")[0];
-    if (!modelPath || modelPath === operationName) {
-      throw new Error("Vertex: invalid operation name");
-    }
+    const modelPath = modelPathOf(operationName);
     const pollUrl = `${BASE_URL}/v1/${modelPath}:fetchPredictOperation`;
     const pollHeaders = {
       "Content-Type": "application/json",
