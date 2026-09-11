@@ -266,6 +266,8 @@ const FAILED_STATUSES = new Set([
 const PENDING_STATUSES = new Set([
   "queued", "queue", "pending", "processing", "running", "in_progress",
   "in-progress", "generating", "working", "active", "submitted", "created", "waiting",
+  // Agnes internal_status values seen live: "inference", "processing".
+  "inference", "preparing", "loading", "starting",
 ]);
 
 function classifyStatus(raw) {
@@ -278,6 +280,14 @@ function classifyStatus(raw) {
   return "unknown";
 }
 
+// Live-verified: Agnes rate-limits the status endpoint to roughly 6 queries in
+// a short window ("too many video status queries"). Polling every 1.5s trips it,
+// and the resulting 429s starve the loop until the job is already done upstream.
+// 5s keeps us comfortably under the limit for multi-minute renders.
+const AGNES_POLL_INTERVAL_MS = 5000;
+// Minimum spacing when the server explicitly rate-limits us.
+const AGNES_MIN_RL_BACKOFF_MS = 10000;
+
 function failureMessage(result) {
   const body = unwrapPollBody(result);
   return (
@@ -288,6 +298,22 @@ function failureMessage(result) {
     body?.detail ||
     "Agnes video generation failed"
   );
+}
+
+// Agnes returns BOTH `status` (top-level task status) and `internal_status`
+// (the engine's own phase). Live captures showed `internal_status: "completed"`
+// alongside `status: "completed"` only at the end — but a partial envelope can
+// carry the internal value first, so treat either as authoritative.
+function resolveStatusFields(body) {
+  const status = body?.status ?? body?.state ?? body?.task_status ?? "";
+  const internal = body?.internal_status ?? "";
+  const progress = Number(body?.progress ?? body?.internal_progress);
+  // Prefer a terminal internal status when the outer status is missing/unknown.
+  const primary = String(status || "").trim();
+  const kind = classifyStatus(primary) !== "unknown"
+    ? classifyStatus(primary)
+    : classifyStatus(internal);
+  return { status: primary || String(internal || ""), kind, progress, internal: String(internal || "") };
 }
 
 function buildBodyV20(model, body) {
@@ -448,18 +474,23 @@ export default {
     log?.debug?.("VIDEO", `agnes-api poll video_id=${videoId} task_id=${taskId} model=${resolvedModel || "n/a"}`);
 
     const RETRYABLE_POLL = new Set([429, 500, 502, 503]);
+    // Agnes rejects non-2xx errors on the status endpoint as `{"error":{...}}`
+    // even on HTTP 200 in some edge cases — handled below via body.error.
     const deadline = Date.now() + VIDEO_POLL_TIMEOUT_MS;
-    let backoffMs = POLL_INTERVAL_MS * 2; // ~3s
+    let backoffMs = AGNES_MIN_RL_BACKOFF_MS;
     let lastStatus = "";
     let attempt = 0;
+    let rateLimitHits = 0;
     // After several pending polls on the recommended endpoint, also try the
     // legacy task endpoint (some accounts only resolve there).
     let useLegacy = false;
     while (Date.now() < deadline) {
-      await sleep(POLL_INTERVAL_MS);
+      // 5s cadence: the status endpoint rate-limits (live-verified ~6 queries
+      // per short window) and 1.5s polling starves the loop with 429s.
+      await sleep(AGNES_POLL_INTERVAL_MS);
       attempt += 1;
-      // Alternate every 8 attempts once legacy is unlocked.
-      if (legacyPollUrl && attempt > 8 && attempt % 8 === 0) useLegacy = !useLegacy;
+      // Prefer the legacy endpoint once we've been rate-limited repeatedly.
+      if (legacyPollUrl && rateLimitHits >= 3 && !useLegacy) useLegacy = true;
       const pollUrl = useLegacy && legacyPollUrl ? legacyPollUrl : primaryPollUrl;
       const pollResponse = await fetch(pollUrl, { headers });
       if (pollResponse.status === 404 && useLegacy && primaryPollUrl) {
@@ -470,13 +501,16 @@ export default {
         throw new Error("Agnes: video was not found or expired");
       }
       if (RETRYABLE_POLL.has(pollResponse.status)) {
+        const errText = await pollResponse.text().catch(() => "");
         try { await pollResponse.body?.cancel?.(); } catch { /* noop */ }
+        if (pollResponse.status === 429) rateLimitHits += 1;
         const retryAfterSec = Number(pollResponse.headers?.get?.("retry-after"));
         const waitMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0
-          ? Math.min(retryAfterSec * 1000, 20000)
+          ? Math.min(retryAfterSec * 1000, 30000)
           : backoffMs;
+        log?.debug?.("VIDEO", `agnes-api poll #${attempt} HTTP ${pollResponse.status} — backing off ${Math.round(waitMs / 1000)}s ${errText.slice(0, 120)}`);
         await sleep(waitMs);
-        backoffMs = Math.min(backoffMs * 2, 20000);
+        backoffMs = Math.min(backoffMs * 2, 30000);
         continue;
       }
       if (!pollResponse.ok) {
@@ -490,28 +524,42 @@ export default {
         continue;
       }
       const body = unwrapPollBody(result);
-      const statusRaw = body?.status ?? body?.state ?? body?.task_status ?? "";
-      lastStatus = String(statusRaw || "");
-      const kind = classifyStatus(statusRaw);
+      // A 200 carrying an error envelope (rate limit surfaced as JSON) is not
+      // a job outcome — back off rather than mis-classifying it.
+      if (body?.error && !body?.status) {
+        const msg = String(body.error.message || body.error || "");
+        if (/too many|rate|429/i.test(msg)) {
+          rateLimitHits += 1;
+          log?.debug?.("VIDEO", `agnes-api poll #${attempt} rate-limited (200 envelope) — backing off ${Math.round(backoffMs / 1000)}s`);
+          await sleep(backoffMs);
+          backoffMs = Math.min(backoffMs * 2, 30000);
+          continue;
+        }
+        throw new Error(`Agnes: ${msg}`);
+      }
+
+      const { status, kind, progress, internal } = resolveStatusFields(body);
+      lastStatus = status;
       const url = firstUrl(result);
-      const progress = Number(body?.progress);
 
       // A result URL is authoritative — Agnes already billed Success on their side.
       if (url) {
+        log?.debug?.("VIDEO", `agnes-api poll #${attempt} DONE status=${status || internal} url acquired`);
         return { ...body, _url: url, _videoId: videoId };
       }
       if (kind === "done" || (Number.isFinite(progress) && progress >= 100 && kind !== "failed")) {
-        throw new Error(`Agnes: video completed with no output url (status=${lastStatus || "completed"})`);
+        throw new Error(`Agnes: video completed with no output url (status=${status || "completed"})`);
       }
       if (kind === "failed") {
         throw new Error(`Agnes: ${failureMessage(result)}`);
       }
-      if (attempt === 1 || attempt % 10 === 0) {
-        log?.debug?.("VIDEO", `agnes-api poll #${attempt} status=${lastStatus || "?"} progress=${Number.isFinite(progress) ? progress : "?"}`);
+      if (attempt === 1 || attempt % 6 === 0) {
+        log?.debug?.("VIDEO", `agnes-api poll #${attempt} status=${status || "?"} internal=${internal || "?"} progress=${Number.isFinite(progress) ? progress : "?"} rl=${rateLimitHits}`);
       }
-      backoffMs = POLL_INTERVAL_MS * 2;
+      // Reset backoff after a healthy poll.
+      backoffMs = AGNES_MIN_RL_BACKOFF_MS;
     }
-    throw new Error(`Agnes video polling timeout (last status: ${lastStatus || "none"}, attempts: ${attempt})`);
+    throw new Error(`Agnes video polling timeout (last status: ${lastStatus || "none"}, attempts: ${attempt}, rate-limited: ${rateLimitHits})`);
   },
   normalize: (responseBody) => ({
     created: Number(responseBody?.created_at) ? responseBody.created_at : nowSec(),
