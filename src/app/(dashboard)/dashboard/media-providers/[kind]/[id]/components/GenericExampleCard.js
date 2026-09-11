@@ -392,18 +392,49 @@ export function GenericExampleCard({ providerId, kind }) {
         {/* Extra fields — for kinds without model concept (webSearch/webFetch), show all; otherwise filter by model.params */}
         {(exConfig.extraFields || [])
           .filter((f) => kindModels.length === 0 || (Array.isArray(selectedModelObj?.params) && selectedModelObj.params.includes(f.key)))
-          .map((f) => (
+          .map((f) => {
+            const fieldVal = extraValues[f.key] ?? "";
+            const fieldOpts = (f.options || []).map(String);
+            // Custom = non-empty value that is not one of the presets.
+            const isCustomSelect = f.type === "select" && f.allowCustom && fieldVal !== "" && !fieldOpts.includes(String(fieldVal));
+            const selectValue = f.type === "select"
+              ? (isCustomSelect ? "__custom__" : String(fieldVal))
+              : undefined;
+            return (
           <Row key={f.key} label={f.label}>
             {f.type === "select" ? (
-              <select
-                value={extraValues[f.key] ?? ""}
-                onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
-                className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
-              >
-                {(f.options || []).map((opt) => (
-                  <option key={opt} value={opt}>{opt === "" ? "(default)" : opt}</option>
-                ))}
-              </select>
+              <div className="flex min-w-0 gap-2">
+                <select
+                  value={selectValue}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "__custom__") {
+                      // Preserve a previous custom value when re-entering custom mode.
+                      setExtraValues((s) => ({
+                        ...s,
+                        [f.key]: fieldOpts.includes(String(s[f.key] ?? "")) ? "" : (s[f.key] ?? ""),
+                      }));
+                    } else {
+                      setExtraValues((s) => ({ ...s, [f.key]: v }));
+                    }
+                  }}
+                  className={isCustomSelect && f.allowCustom ? "w-1/2 min-w-0 px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary" : "w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"}
+                >
+                  {(f.options || []).map((opt) => (
+                    <option key={opt} value={opt}>{opt === "" ? "(default)" : opt}</option>
+                  ))}
+                  {f.allowCustom && <option value="__custom__">Custom…</option>}
+                </select>
+                {isCustomSelect && (
+                  <input
+                    type="text"
+                    value={fieldVal}
+                    placeholder={f.placeholder || "Custom value"}
+                    onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
+                    className="w-1/2 min-w-0 px-3 py-1.5 text-sm border border-primary/40 rounded-lg bg-background focus:outline-none focus:border-primary"
+                  />
+                )}
+              </div>
             ) : f.type === "text" ? (
               <input
                 type="text"
@@ -418,12 +449,15 @@ export function GenericExampleCard({ providerId, kind }) {
                 value={extraValues[f.key] ?? ""}
                 min={f.min}
                 max={f.max}
+                step={f.step}
+                placeholder={f.placeholder}
                 onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value === "" ? "" : Number(e.target.value) }))}
                 className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
               />
             )}
           </Row>
-        ))}
+            );
+          })}
 
         {/* Output Format toggle (image only) — last */}
         {kind === "image" && (

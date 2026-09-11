@@ -65,6 +65,48 @@ export const KIND_EXAMPLE_CONFIG = {
     defaultInput: "A serene lake at sunset",
     bodyKey: "prompt",
     defaultResponse: `{\n  "data": [\n    { "url": "..." }\n  ]\n}`,
+    // Only fields listed on the selected model's `params` are shown.
+    // Empty default = omitted from the body (provider default).
+    extraFields: [
+      {
+        key: "duration",
+        label: "Duration (s)",
+        type: "number",
+        default: "",
+        min: 1,
+        max: 600,
+        step: 1,
+        placeholder: "e.g. 8",
+      },
+      {
+        key: "aspect_ratio",
+        label: "Aspect Ratio",
+        type: "select",
+        default: "",
+        allowCustom: true,
+        placeholder: "e.g. 16:9 or 1.78",
+        options: ["", "16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9"],
+      },
+      {
+        // Runway / Bynara name this `ratio` instead of `aspect_ratio`.
+        key: "ratio",
+        label: "Ratio",
+        type: "select",
+        default: "",
+        allowCustom: true,
+        placeholder: "e.g. 1280:720",
+        options: ["", "16:9", "9:16", "1:1", "4:3", "3:4", "1280:720", "720:1280"],
+      },
+      {
+        key: "resolution",
+        label: "Resolution",
+        type: "select",
+        default: "",
+        allowCustom: true,
+        placeholder: "e.g. 720p or 1280x720",
+        options: ["", "480p", "720p", "1080p", "2160p"],
+      },
+    ],
   },
   music: {
     inputLabel: "Prompt",
