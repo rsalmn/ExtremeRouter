@@ -1,4 +1,5 @@
 
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -150,7 +151,10 @@ async function acquireServiceCookie(passJar, proxyOptions) {
   absorbSetCookie(jar, sts);
 
   if (!jar.serviceToken) return null;
-  const needed = ["serviceToken", "mimopc_ph", "mimopc_slh", "userId"];
+  // Identity cookie names are cluster-scoped (observed on sgp: mimosgp_ph /
+  // mimosgp_slh, not the mimopc_* names this used to hardcode) — derive them
+  // from MIMO_REGION so a cluster change can't silently drop them again.
+  const needed = ["serviceToken", `mimo${MIMO_REGION}_ph`, `mimo${MIMO_REGION}_slh`, "userId"];
   const out = {};
   for (const k of needed) if (jar[k]) out[k] = jar[k];
   return cookieHeader(out);
@@ -211,6 +215,15 @@ export function invalidateMimoAccountCookieCache() {
 /** mimo-server account API base + the User-Agent its backend expects. */
 export const MIMO_API_BASE = API_BASE;
 export const MIMO_API_UA = API_UA;
+
+// Headers observed from a real MiMo Desktop /api/route/chat/completions call
+// (captured via HTTP Toolkit) — distinct from API_UA above, which is only
+// for the SSO/account-service handshake. x-mimo-source in particular looks
+// load-bearing: without it the backend returned membership_required even
+// with a valid serviceToken cookie.
+export const MIMO_CHAT_UA = "mimocode/desktop-cb00c28 ai-sdk/provider-utils/4.0.23 runtime/node.js/24";
+export const MIMO_CHAT_SOURCE_HEADER = "mimocode-cli, mimocode-cli-free";
+export const MIMO_CLIENT_VERSION = "26.912.121036";
 
 /**
  * Resolve the mimo-server account-session cookie, for upstream /api/route/* calls.
