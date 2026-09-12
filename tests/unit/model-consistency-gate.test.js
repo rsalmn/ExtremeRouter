@@ -91,6 +91,10 @@ const NO_PUBLIC_RATE = new Map([
   ["opencode-go/mimo-v2.5-max", "opencode-go effort tier — unpublished"],
   ["opencode-go/muse-spark-1.2-contributor", "opencode-go subscription"],
   ["xiaomi-tokenplan/mimo-v2.5-pro-claude", "Xiaomi token plan — unpublished"],
+  // MiMo Desktop Preview models — billed through the Xiaomi account session
+  // (weekly quota), not a public per-token API rate.
+  ["xiaomi-mimo/mimo-x-pro-preview", "MiMo Desktop Preview — account-session quota"],
+  ["xiaomi-mimo/mimo-x-flash-preview", "MiMo Desktop Preview — account-session quota"],
   ["kimchi/nemotron-3-ultra-fp4", "Kimchi — unpublished rate"],
   // Small hosts / resellers not covered by models.dev
   ["groq/meta-llama/llama-4-maverick-17b-128e-instruct", "Groq — unpublished for this id"],

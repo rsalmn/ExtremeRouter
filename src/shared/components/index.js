@@ -26,6 +26,7 @@ export { default as KiroAuthModal } from "./KiroAuthModal";
 export { default as KiroOAuthWrapper } from "./KiroOAuthWrapper";
 export { default as KiroSocialOAuthModal } from "./KiroSocialOAuthModal";
 export { default as CursorAuthModal } from "./CursorAuthModal";
+export { default as XiaomiMimoAuthModal } from "./XiaomiMimoAuthModal";
 export { default as ZedAuthModal } from "./ZedAuthModal";
 export { default as KimiDesktopAuthModal } from "./KimiDesktopAuthModal";
 export { default as KimiDesktopQuotaCard } from "./KimiDesktopQuotaCard";

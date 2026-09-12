@@ -12,6 +12,10 @@ const STRIP_RULES = [
   { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
   // Cloudflare Workers AI: content must be plain string, rejects OpenAI content-part array (#1926)
   { provider: "cloudflare-ai", flattenContent: true },
+  // MiMo Desktop Preview models (account-service route): content must be plain
+  // string, rejects OpenAI content-part array. Cloud models keep their parts
+  // (mimo-v2-omni is multi-modal).
+  { provider: "xiaomi-mimo", match: /preview/i, flattenContent: true },
   // AI Horde: workers run raw text-completion backends — no tool calling, and
   // the Aphrodite OpenAI-compatible facade 500s on single-text-part content
   // arrays (plain-string form only). Port of OmniRoute aihorde registry quirks.

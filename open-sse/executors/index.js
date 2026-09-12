@@ -16,6 +16,7 @@ import { GrokWebExecutor } from "./grok-web.js";
 import { PerplexityWebExecutor } from "./perplexity-web.js";
 import { OllamaLocalExecutor } from "./ollama-local.js";
 import { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
+import { XiaomiMimoExecutor } from "./xiaomi-mimo.js";
 import { MimoFreeExecutor } from "./mimo-free.js";
 import { CodeBuddyExecutor } from "./codebuddy-cn.js";
 import { ZaiWebExecutor } from "./zai-web.js";
@@ -94,6 +95,7 @@ const executors = {
   "ollama-local": new OllamaLocalExecutor(),
   // commandcode now uses DefaultExecutor (OpenAI/Anthropic native endpoints)
   "xiaomi-tokenplan": new XiaomiTokenplanExecutor(),
+  "xiaomi-mimo": new XiaomiMimoExecutor(),
   "mimo-free": new MimoFreeExecutor(),
   mmf: new MimoFreeExecutor(), // Alias for mimo-free
   "codebuddy-cn": new CodeBuddyExecutor("codebuddy-cn"),
@@ -199,6 +201,7 @@ export { PerplexityWebExecutor } from "./perplexity-web.js";
 export { OllamaLocalExecutor } from "./ollama-local.js";
 // CommandCodeExecutor removed — provider now uses standard OpenAI/Anthropic endpoints (DefaultExecutor)
 export { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
+export { XiaomiMimoExecutor } from "./xiaomi-mimo.js";
 export { MimoFreeExecutor } from "./mimo-free.js";
 export { CodeBuddyExecutor } from "./codebuddy-cn.js";
 export { DevinExecutor } from "./devin.js";

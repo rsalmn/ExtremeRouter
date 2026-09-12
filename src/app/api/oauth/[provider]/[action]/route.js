@@ -1,12 +1,14 @@
+import crypto from "crypto";
 import { NextResponse } from "next/server";
-import { 
-  getProvider, 
-  generateAuthData, 
-  exchangeTokens, 
-  requestDeviceCode, 
-  pollForToken 
+import {
+  getProvider,
+  generateAuthData,
+  exchangeTokens,
+  requestDeviceCode,
+  pollForToken
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
+import { readDesktopPassToken } from "open-sse/shared/mimoAccount.js";
 import {
   startCodexProxy,
   stopCodexProxy,
@@ -18,6 +20,11 @@ import {
   registerXaiSession,
   getXaiSessionStatus,
   clearXaiSession,
+  startXiaomiMimoProxy,
+  stopXiaomiMimoProxy,
+  registerXiaomiMimoSession,
+  getXiaomiMimoSessionStatus,
+  clearXiaomiMimoSession,
 } from "@/lib/oauth/utils/server";
 
 async function completeXaiManualCode(code, state) {
@@ -72,6 +79,27 @@ export async function GET(request, { params }) {
     const { searchParams } = new URL(request.url);
 
     if (action === "authorize") {
+      // Xiaomi MiMo: custom ECDH flow — generate keypair, start proxy, return authorize URL.
+      // The callback carries ?u=<ciphertext> instead of ?code=, so this bypasses
+      // the generic PKCE pipeline entirely.
+      if (provider === "xiaomi-mimo") {
+        const { generateKeyPair, buildAuthorizeUrl, getKeyName } = await import("@/lib/oauth/providers/xiaomi-mimo");
+        const { publicKey, privateKeyDer } = generateKeyPair();
+        const state = searchParams.get("state") || crypto.randomUUID();
+
+        const proxyResult = await startXiaomiMimoProxy();
+        if (!proxyResult.success) {
+          return NextResponse.json({ error: `Failed to start callback server: ${proxyResult.reason}` }, { status: 500 });
+        }
+
+        registerXiaomiMimoSession({ state, privateKeyDer });
+
+        const redirectUri = proxyResult.callbackUrl;
+        const authorizeUrl = buildAuthorizeUrl(publicKey, redirectUri, getKeyName());
+
+        return NextResponse.json({ state, authorizeUrl, redirectUri, port: proxyResult.port });
+      }
+
       const redirectUri = searchParams.get("redirect_uri") || "http://localhost:8080/callback";
       // Collect provider-specific meta params (e.g. gitlab passes baseUrl, clientId, clientSecret)
       const reservedParams = new Set(["redirect_uri"]);
@@ -105,12 +133,27 @@ export async function GET(request, { params }) {
     }
 
     if (action === "poll-status") {
-      if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Poll only supported for codex/xai" }, { status: 400 });
+      if (!["codex", "xai", "xiaomi-mimo"].includes(provider)) {
+        return NextResponse.json({ error: "Poll only supported for codex/xai/xiaomi-mimo" }, { status: 400 });
       }
       const state = searchParams.get("state");
       if (!state) {
         return NextResponse.json({ error: "Missing state" }, { status: 400 });
+      }
+      if (provider === "xiaomi-mimo") {
+        const session = getXiaomiMimoSessionStatus(state);
+        if (!session) return NextResponse.json({ status: "unknown" });
+        // Regression: a finished session must SURVIVE poll-status so the client's
+        // following POST /exchange can consume it. Clearing it here made every
+        // exchange return 400 and the whole browser-OAuth fallback dead.
+        // Only failed sessions are cleaned up (and the proxy stopped) here.
+        if (session.status === "error") {
+          const payload = { ...session };
+          clearXiaomiMimoSession(state);
+          stopXiaomiMimoProxy();
+          return NextResponse.json(payload);
+        }
+        return NextResponse.json({ status: session.status, result: session.result || null });
       }
       const session = provider === "xai" ? getXaiSessionStatus(state) : getCodexSessionStatus(state);
       if (!session) return NextResponse.json({ status: "unknown" });
@@ -124,10 +167,11 @@ export async function GET(request, { params }) {
     }
 
     if (action === "stop-proxy") {
-      if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
+      if (!["codex", "xai", "xiaomi-mimo"].includes(provider)) {
+        return NextResponse.json({ error: "Proxy only supported for codex/xai/xiaomi-mimo" }, { status: 400 });
       }
-      if (provider === "xai") stopXaiProxy();
+      if (provider === "xiaomi-mimo") stopXiaomiMimoProxy();
+      else if (provider === "xai") stopXaiProxy();
       else stopCodexProxy();
       return NextResponse.json({ success: true });
     }
@@ -188,6 +232,64 @@ export async function POST(request, { params }) {
     }
 
     if (action === "exchange") {
+      // Xiaomi MiMo: the encrypted callback already produced {uid, sk, url}.
+      // No code/token exchange — just consume the session and persist the
+      // Desktop passToken so the Preview models can authenticate later.
+      if (provider === "xiaomi-mimo") {
+        const { state } = body || {};
+        if (!state) {
+          return NextResponse.json({ error: "Missing state" }, { status: 400 });
+        }
+        const session = getXiaomiMimoSessionStatus(state);
+        if (!session) {
+          return NextResponse.json({ error: "Session not found or already consumed" }, { status: 400 });
+        }
+        // decryptCallback normalises to { uid, sk, url }; accept accessToken too
+        // so a session recorded under either name is consumable.
+        const token = session.result?.sk || session.result?.accessToken;
+        if (session.status !== "done" || !token) {
+          return NextResponse.json({ error: session.error || "Sign-in did not complete" }, { status: 400 });
+        }
+
+        try {
+          // Persist the Desktop passToken — without it the account-session
+          // handshake (Preview models + weekly quota) cannot run.
+          const desktop = await readDesktopPassToken().catch(() => null);
+          const providerSpecificData = { authMethod: "oauth" };
+          if (desktop?.passToken) {
+            providerSpecificData.mimoPassToken = desktop.passToken;
+            providerSpecificData.mimoUserId = session.result.uid || desktop.userId || null;
+            providerSpecificData.mimoCUserId = desktop.cUserId || null;
+          }
+
+          const connection = await createProviderConnection({
+            provider: "xiaomi-mimo",
+            authType: "oauth",
+            accessToken: token,
+            email: session.result.uid || null,
+            providerSpecificData,
+            testStatus: "active",
+          });
+
+          clearXiaomiMimoSession(state);
+          stopXiaomiMimoProxy();
+
+          return NextResponse.json({
+            success: true,
+            connection: {
+              id: connection.id,
+              provider: connection.provider,
+              email: connection.email,
+              displayName: connection.displayName,
+            },
+          });
+        } catch (err) {
+          clearXiaomiMimoSession(state);
+          stopXiaomiMimoProxy();
+          return NextResponse.json({ error: err.message }, { status: 500 });
+        }
+      }
+
       const { code, redirectUri, codeVerifier, state, meta } = body;
 
       // Detect if "code" is actually a raw JWT access token (starts with eyJ).

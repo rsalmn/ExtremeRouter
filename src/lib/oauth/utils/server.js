@@ -424,3 +424,139 @@ export function stopXaiProxy() {
   }
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Xiaomi MiMo fixed-port proxy on 127.0.0.1:56122
+//
+// Custom ECDH encrypted-callback flow: the callback carries ?u=<ciphertext>
+// instead of ?code=, so the proxy decrypts it with the session's private key
+// rather than exchanging a code.
+//
+// Two lifecycle rules differ from the xAI proxy (both were bugs there):
+//   1. Sessions are a Map keyed by state, so stopXiaomiMimoProxy MUST clear
+//      every pending session — each one holds an X25519 private key, and
+//      leaking them for the process lifetime is a key-material leak.
+//   2. A finished (done) session must survive /poll-status so the client's
+//      following POST /exchange can consume it. Clearing it in poll-status
+//      made every exchange return 400 and the whole browser flow dead.
+//      Only /exchange (via clearXiaomiMimoSession) and error paths clean up.
+// ───────────────────────────────────────────────────────────────────────────
+
+let xiaomiMimoProxyServer = null;
+let xiaomiMimoProxyTimeout = null;
+const XIAOMI_MIMO_PROXY_TIMEOUT_MS = 300000; // 5 minutes
+const XIAOMI_MIMO_PROXY_PORT = 56122;
+const xiaomiMimoSessions = new Map(); // state -> { privateKeyDer, status, result, error, createdAt }
+
+export function registerXiaomiMimoSession({ state, privateKeyDer }) {
+  if (!state || !privateKeyDer) return false;
+  xiaomiMimoSessions.set(state, {
+    privateKeyDer,
+    status: "pending",
+    result: null,
+    error: null,
+    createdAt: Date.now(),
+  });
+  return true;
+}
+
+/** Public view only — never exposes the private key. */
+export function getXiaomiMimoSessionStatus(state) {
+  const s = xiaomiMimoSessions.get(state);
+  if (!s) return null;
+  return { status: s.status, result: s.result, error: s.error };
+}
+
+export function clearXiaomiMimoSession(state) {
+  xiaomiMimoSessions.delete(state);
+}
+
+function settleXiaomiMimoSession(state, patch) {
+  const s = xiaomiMimoSessions.get(state);
+  if (!s) return null;
+  Object.assign(s, patch);
+  return s;
+}
+
+export function startXiaomiMimoProxy() {
+  return new Promise((resolve) => {
+    if (xiaomiMimoProxyServer) {
+      resolve({ success: true, port: XIAOMI_MIMO_PROXY_PORT, callbackUrl: `http://127.0.0.1:${XIAOMI_MIMO_PROXY_PORT}/callback` });
+      return;
+    }
+
+    const server = http.createServer(async (req, res) => {
+      const url = new URL(req.url, "http://localhost");
+      if (url.pathname !== "/callback" && url.pathname !== "/auth/callback") {
+        res.writeHead(404);
+        res.end("Not found");
+        return;
+      }
+
+      const state = url.searchParams.get("state");
+      const errorParam = url.searchParams.get("error");
+      const encrypted = url.searchParams.get("u");
+
+      const session = state ? xiaomiMimoSessions.get(state) : null;
+      if (!session) {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderCodexResultPage(false, "Unknown or expired login session. Close this tab and try again from ExtremeRouter."));
+        return;
+      }
+
+      try {
+        if (errorParam) {
+          throw new Error(url.searchParams.get("error_description") || errorParam);
+        }
+        if (!encrypted) throw new Error("No encrypted payload received");
+
+        const { decryptCallback } = await import("../providers/xiaomi-mimo.js");
+        const payload = decryptCallback(encrypted, session.privateKeyDer);
+        if (!payload || !payload.sk) {
+          throw new Error("Could not decrypt with any pending session key");
+        }
+
+        settleXiaomiMimoSession(state, { status: "done", result: payload });
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderCodexResultPage(true, "Xiaomi sign-in complete. Return to ExtremeRouter and click Check Again."));
+      } catch (err) {
+        settleXiaomiMimoSession(state, { status: "error", error: err.message });
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderCodexResultPage(false, err.message));
+      }
+    });
+
+    server.listen(XIAOMI_MIMO_PROXY_PORT, "127.0.0.1", () => {
+      xiaomiMimoProxyServer = server;
+      xiaomiMimoProxyTimeout = setTimeout(() => stopXiaomiMimoProxy(), XIAOMI_MIMO_PROXY_TIMEOUT_MS);
+      resolve({
+        success: true,
+        port: XIAOMI_MIMO_PROXY_PORT,
+        callbackUrl: `http://127.0.0.1:${XIAOMI_MIMO_PROXY_PORT}/callback`,
+      });
+    });
+
+    server.on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        resolve({ success: false, reason: "port_busy" });
+      } else {
+        resolve({ success: false, reason: err.message });
+      }
+    });
+  });
+}
+
+export function stopXiaomiMimoProxy() {
+  if (xiaomiMimoProxyTimeout) {
+    clearTimeout(xiaomiMimoProxyTimeout);
+    xiaomiMimoProxyTimeout = null;
+  }
+  if (xiaomiMimoProxyServer) {
+    xiaomiMimoProxyServer.close();
+    xiaomiMimoProxyServer = null;
+  }
+  // Leak fix: every pending session holds an X25519 private key. Dropping the
+  // listener must drop them too — a Map is not a singleton, so without this
+  // each abandoned login attempt retained key material for the process lifetime.
+  xiaomiMimoSessions.clear();
+}
+

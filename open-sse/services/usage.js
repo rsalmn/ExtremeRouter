@@ -29,6 +29,7 @@ import { getKimchiUsage } from "./usage/kimchi.js";
 import { getKimiDesktopUsage } from "./usage/kimi-desktop.js";
 import { getZedUsage } from "./usage/zed.js";
 import { getXkiroUsage } from "./usage/xkiro.js";
+import { getXiaomiMimoUsage } from "./usage/xiaomi-mimo.js";
 
 /**
  * Get usage data for a provider connection
@@ -81,6 +82,10 @@ const USAGE_HANDLERS = {
   zed: (c) => getZedUsage(c.accessToken, c.providerSpecificData, c.proxyOptions, c.refreshToken),
   // xKiro: the same sk-xt- key used for chat reads /v1/usage (free endpoint).
   xkiro: (c) => getXkiroUsage({ apiKey: c.apiKey, accessToken: c.accessToken }, c.proxyOptions),
+  // xiaomi-mimo: weekly quota from the Xiaomi account session (mimoPassToken in
+  // providerSpecificData, else the local Desktop cookie store). The sk- key
+  // alone cannot read it.
+  "xiaomi-mimo": (c) => getXiaomiMimoUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null) {

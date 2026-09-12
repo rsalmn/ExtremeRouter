@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Card, Button, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, ZedAuthModal, KimiDesktopAuthModal, KimiDesktopQuotaCard, OneMinAuthModal, QwenAuthModal, WpStudioAuthModal, IFlowCookieModal, GitLabAuthModal, EditConnectionModal, ConfirmModal } from "@/shared/components";
+import { Card, Button, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, XiaomiMimoAuthModal, ZedAuthModal, KimiDesktopAuthModal, KimiDesktopQuotaCard, OneMinAuthModal, QwenAuthModal, WpStudioAuthModal, IFlowCookieModal, GitLabAuthModal, EditConnectionModal, ConfirmModal } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -1185,6 +1185,8 @@ export default function ProviderDetailPage() {
         <ZedAuthModal isOpen={showOAuthModal} onSuccess={handleOAuthSuccess} onClose={() => setShowOAuthModal(false)} />
       ) : providerId === "kimi-desktop" ? (
         <KimiDesktopAuthModal isOpen={showOAuthModal} onSuccess={handleOAuthSuccess} onClose={() => setShowOAuthModal(false)} />
+      ) : providerId === "xiaomi-mimo" ? (
+        <XiaomiMimoAuthModal isOpen={showOAuthModal} onSuccess={handleOAuthSuccess} onClose={() => setShowOAuthModal(false)} />
       ) : providerId === "gitlab" ? (
         <GitLabAuthModal isOpen={showOAuthModal} providerInfo={providerInfo} onSuccess={handleOAuthSuccess} onClose={() => setShowOAuthModal(false)} />
       ) : (
