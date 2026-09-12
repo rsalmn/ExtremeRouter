@@ -1,10 +1,11 @@
-import fs from "node:fs";
+
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
-const API_BASE = "https://mimo-server-cn.xiaomimimo.com";
+const MIMO_REGION = (process.env.MIMO_ACCOUNT_REGION || "cn").toLowerCase();
+const API_BASE = `https://mimo-server-${MIMO_REGION}.xiaomimimo.com`;
 const ACCOUNT_HOST = "account.xiaomi.com";
 const API_UA =
   "miNative PC/Normal Windows_NT/10.0.19045 SDKV/1.0.0 DEVT/PC DEVS/Windows APP/miaccount_desktop APPV/0.1.0";
@@ -177,6 +178,8 @@ async function getServiceCookie(providerSpecificData, proxyOptions) {
     return { cookie: cached.cookie };
   }
 
+  // De-dupe concurrent handshakes for the same account: a burst of requests must
+  // not each run the full 5-step SSO chain.
   const inflight = _inflight.get(key);
   if (inflight) {
     const cookie = await inflight;
@@ -187,7 +190,7 @@ async function getServiceCookie(providerSpecificData, proxyOptions) {
     try {
       return await acquireServiceCookie(passJar, proxyOptions);
     } catch {
-      return null;
+      return null; // network/parse failure — callers degrade, never throw
     } finally {
       _inflight.delete(key);
     }
