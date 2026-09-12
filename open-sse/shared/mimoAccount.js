@@ -1,18 +1,3 @@
-// Xiaomi MiMo account-session helpers (Desktop-exclusive Preview models + weekly quota).
-//
-// The account-service route (mimo-server-cn.xiaomimimo.com/api/route/*) and the
-// weekly-quota endpoint are authorized by a Xiaomi account session cookie, NOT
-// the sk- API key. Acquiring that cookie mirrors MiMo Desktop: a passToken
-// (persisted in Desktop's Chromium cookie store) is exchanged via the
-// passportapi SSO, then authorized for the `mimopc` service, and finally stamped
-// by the mimo-server /api/sts callback into a `serviceToken` cookie.
-//
-// Flow (verified against MiMo Desktop traffic):
-//   1. GET  {api}/api/user/xiaomi/me                              -> 302 (sid=mimopc, callback=sts)
-//   2. GET  account /pass/serviceLogin?sid=passportapi&_json=true -> nonce/ssecurity
-//   3. GET  {location}&clientSign=...                             -> account-level serviceToken
-//   4. GET  account /pass/serviceLogin?sid=mimopc&callback=<sts>&_json=true
-//   5. GET  {api}/api/sts?...&ticket...                           -> Set-Cookie: serviceToken
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -26,20 +11,22 @@ const API_UA =
 const SSO_UA = "MiClaw/1.0";
 const COOKIE_TTL_MS = 30 * 60 * 1000;
 
-// Per-account session caches (keyed by passToken hash) so multiple Xiaomi
-// accounts / connections can rotate without clobbering each other.
 const _cache = new Map(); // key -> { cookie, at }
 const _inflight = new Map(); // key -> Promise<cookie|null>
 
-function desktopCookiePath() {
+const DESKTOP_APP_FOLDER_NAMES = ["Xiaomi MiMo AI", "Xiaomi MiMo"];
+
+function desktopCookiePathCandidates() {
   const home = os.homedir();
-  if (process.platform === "win32") {
-    return path.join(home, "AppData", "Roaming", "Xiaomi MiMo", "Partitions", "xiaomi-account", "Network", "Cookies");
-  }
-  if (process.platform === "darwin") {
-    return path.join(home, "Library", "Application Support", "Xiaomi MiMo", "Partitions", "xiaomi-account", "Network", "Cookies");
-  }
-  return path.join(home, ".config", "Xiaomi MiMo", "Partitions", "xiaomi-account", "Network", "Cookies");
+  return DESKTOP_APP_FOLDER_NAMES.map((appFolder) => {
+    if (process.platform === "win32") {
+      return path.join(home, "AppData", "Roaming", appFolder, "Partitions", "xiaomi-account", "Network", "Cookies");
+    }
+    if (process.platform === "darwin") {
+      return path.join(home, "Library", "Application Support", appFolder, "Partitions", "xiaomi-account", "Network", "Cookies");
+    }
+    return path.join(home, ".config", appFolder, "Partitions", "xiaomi-account", "Network", "Cookies");
+  });
 }
 
 /**
@@ -49,8 +36,8 @@ function desktopCookiePath() {
  * @returns {Promise<Record<string,string>|null>}
  */
 async function readDesktopAccountCookies() {
-  const src = desktopCookiePath();
-  if (!fs.existsSync(src)) return null;
+  const src = desktopCookiePathCandidates().find((p) => fs.existsSync(p));
+  if (!src) return null;
   const tmp = path.join(os.tmpdir(), `mimo-cookies-${process.pid}-${crypto.randomBytes(4).toString("hex")}.db`);
   try {
     fs.copyFileSync(src, tmp);
@@ -190,8 +177,6 @@ async function getServiceCookie(providerSpecificData, proxyOptions) {
     return { cookie: cached.cookie };
   }
 
-  // De-dupe concurrent handshakes for the same account: a burst of requests must
-  // not each run the full 5-step SSO chain.
   const inflight = _inflight.get(key);
   if (inflight) {
     const cookie = await inflight;
@@ -202,7 +187,7 @@ async function getServiceCookie(providerSpecificData, proxyOptions) {
     try {
       return await acquireServiceCookie(passJar, proxyOptions);
     } catch {
-      return null; // network/parse failure — callers degrade, never throw
+      return null;
     } finally {
       _inflight.delete(key);
     }
