@@ -3,20 +3,14 @@ import {
   getMimoAccountCookie,
   invalidateMimoAccountCookieCache,
   MIMO_API_BASE,
-  MIMO_API_UA,
+  MIMO_CHAT_UA,
+  MIMO_CHAT_SOURCE_HEADER,
+  MIMO_CLIENT_VERSION,
 } from "../shared/mimoAccount.js";
 
-// Desktop-exclusive Preview models. These are served by the account service's
-// /api/route proxy, authorized by the Xiaomi account session (NOT the sk- key).
-// See shared/mimoAccount.js for the session handshake.
 const PREVIEW_MODELS = new Set(["mimo-x-pro-preview", "mimo-x-flash-preview"]);
-
-// Session cookie resolved in execute() (async) and read back by buildHeaders()
-// (sync — BaseExecutor.execute does not await it). Carried on the per-request
-// credentials object, same as runtimeTransport.
 const COOKIE_KEY = "__mimoAccountCookie";
 
-// Upstream calls may hand us either the bare id or a `provider/model` ref.
 function bareModel(model) {
   const s = String(model || "");
   const i = s.indexOf("/");
@@ -33,28 +27,20 @@ export class XiaomiMimoExecutor extends DefaultExecutor {
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
-    // Preview models live on the account-service route, which is not one of the
-    // declared transports — resolve it before the default runtimeTransport path.
     if (XiaomiMimoExecutor.isPreviewModel(model)) {
       return `${MIMO_API_BASE}/api/route/chat/completions`;
     }
-    // Cloud API models keep default handling, so a Claude-format client reaches
-    // the /anthropic/v1/messages transport.
     return super.buildUrl(model, stream, urlIndex, credentials);
   }
 
-  // NOTE: BaseExecutor.execute calls
-  //   buildHeaders(credentials, stream, model, opencodeIdentity, urlIndex)
-  // so the 3rd argument is the model (not a url). Match that convention here —
-  // DefaultExecutor declares its 3rd param as `url` and never reads it, which is
-  // why the model must be read from the 3rd slot for the check to fire at runtime.
   buildHeaders(credentials, stream = true, model, opencodeIdentity, urlIndex) {
     if (XiaomiMimoExecutor.isPreviewModel(model) && credentials?.[COOKIE_KEY]) {
-      // Preview models authenticate with the account-session cookie, not the key.
       return {
         "Content-Type": "application/json",
         Accept: stream ? "text/event-stream" : "application/json",
-        "User-Agent": MIMO_API_UA,
+        "User-Agent": MIMO_CHAT_UA,
+        "X-Mimo-Source": MIMO_CHAT_SOURCE_HEADER,
+        "X-Client-Version": MIMO_CLIENT_VERSION,
         Cookie: credentials[COOKIE_KEY],
       };
     }
@@ -62,12 +48,7 @@ export class XiaomiMimoExecutor extends DefaultExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    // super runs stripUnsupportedParams, which flattens Preview content-part
-    // arrays (see the xiaomi-mimo rule in translator/concerns/paramSupport.js).
     const out = super.transformRequest(model, body, stream, credentials);
-
-    // Preview models: thinking/params get defaults only — never override what the
-    // caller set explicitly.
     if (XiaomiMimoExecutor.isPreviewModel(model)) {
       if (out.thinking == null) out.thinking = { type: "enabled" };
       if (out.temperature == null) out.temperature = 1.0;
