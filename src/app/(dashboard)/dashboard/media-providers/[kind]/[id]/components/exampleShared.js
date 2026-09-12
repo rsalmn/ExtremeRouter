@@ -69,6 +69,11 @@ export const KIND_EXAMPLE_CONFIG = {
     // Empty default = omitted from the body (provider default).
     extraFields: [
       {
+        // Providers with a `seconds` field (Agnes 2.5) cap duration at 12s and
+        // receive `duration` as a fallback — keep it inside that range.
+        // Long-form providers (Agnes v2.0, xAI) allow far more; this input is
+        // filtered by each model's params, so set the widest common bound and
+        // let the adapter clamp per model.
         key: "duration",
         label: "Duration (s)",
         type: "number",
@@ -76,7 +81,7 @@ export const KIND_EXAMPLE_CONFIG = {
         min: 1,
         max: 600,
         step: 1,
-        placeholder: "e.g. 8",
+        placeholder: "e.g. 8 (Agnes 2.5: max 12)",
       },
       {
         // Agnes 2.5 uses seconds as a string "4"-"12".
@@ -85,7 +90,7 @@ export const KIND_EXAMPLE_CONFIG = {
         type: "select",
         default: "",
         allowCustom: true,
-        placeholder: "e.g. 8",
+        placeholder: "4-12",
         options: ["", "4", "5", "6", "7", "8", "9", "10", "11", "12"],
       },
       {

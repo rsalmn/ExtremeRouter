@@ -2,17 +2,22 @@
  * Agnes AI (API) text-to-video adapter tests.
  *
  * Contract (apihub.agnes-ai.com):
- *   POST /v1/videos → { video_id, status }
- *   GET  /agnesapi?video_id=<id> → status/url
+ *   POST /v1/videos â†’ { video_id, status }
+ *   GET  /agnesapi?video_id=<id> â†’ status/url
  *
  * Covers endpoint/auth, body mapping (raw fields + playground aliases
  * resolution/aspect_ratio/duration), validation, poll, and normalize.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { POLL_INTERVAL_MS } from "../../open-sse/handlers/imageProviders/_base.js";
-import agnes from "../../open-sse/handlers/videoProviders/agnes-api.js";
+import agnes, { AGNES_POLL_INTERVAL } from "../../open-sse/handlers/videoProviders/agnes-api.js";
 import { getVideoAdapter } from "../../open-sse/handlers/videoProviders/index.js";
 import { handleVideoGenerationCore } from "../../open-sse/handlers/videoGenerationCore.js";
+
+// Agnes polls at 5s (rate-limit safe); advancing by the shared 1.5s image
+// interval would stall these tests short of a poll.
+const TICK = AGNES_POLL_INTERVAL;
+const advancePolls = (n) => vi.advanceTimersByTimeAsync(TICK * n);
 
 const originalFetch = global.fetch;
 const MODEL = "agnes-video-v2.0";
@@ -96,7 +101,7 @@ describe("agnes-api video adapter", () => {
     });
     expect(body.height).toBe(720);
     expect(body.width).toBe(Math.round(720 * (16 / 9)));
-    // 5s * 24fps = 120 → snapped to nearest 8n+1 = 121.
+    // 5s * 24fps = 120 â†’ snapped to nearest 8n+1 = 121.
     expect(body.num_frames).toBe(121);
     expect(body.frame_rate).toBe(24);
   });
@@ -153,7 +158,7 @@ describe("agnes-api video adapter", () => {
       model: MODEL,
     });
     const promise = agnes.parseResponse(create, { headers: HEADERS });
-    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
+    await advancePolls(3);
     const parsed = await promise;
 
     const firstPoll = global.fetch.mock.calls[0];
@@ -179,7 +184,7 @@ describe("agnes-api video adapter", () => {
       jsonResponse({ video_id: "v1", status: "queued" }),
       { headers: HEADERS }
     ).catch((e) => e);
-    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
+    await advancePolls(3);
     expect((await failed).message).toContain("quota exceeded");
   });
 
@@ -196,7 +201,7 @@ describe("agnes-api video adapter", () => {
       { headers: HEADERS }
     );
     // First poll + Retry-After 2s + second poll + backoff + third poll.
-    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 20);
+    await advancePolls(20);
     const parsed = await promise;
     expect(global.fetch).toHaveBeenCalledTimes(3);
     expect(agnes.normalize(parsed).data).toEqual([{ url: "https://cdn.agnes-ai.com/ok.mp4" }]);
@@ -216,7 +221,7 @@ describe("agnes-api video adapter", () => {
       jsonResponse({ video_id: "v_wrap", status: "queued", model: MODEL }),
       { headers: HEADERS }
     );
-    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 4);
+    await advancePolls(4);
     const parsed = await promise;
     expect(agnes.normalize(parsed).data).toEqual([{ url: "https://cdn.agnes-ai.com/wrapped.mp4" }]);
   });
@@ -246,13 +251,14 @@ describe("agnes-api video adapter", () => {
       }),
       { headers: HEADERS }
     );
-    // Unlock legacy after 8 attempts, then alternate.
-    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 40);
+    // 5s polls: legacy unlocks only after 3 rate-limit hits, so this needs a
+    // wider fake-timer window than the default 5s test timeout.
+    await advancePolls(40);
     const parsed = await promise;
     expect(agnes.normalize(parsed).data).toEqual([
       { url: "https://platform-outputs.agnes-ai.space/videos/x.mp4" },
     ]);
-  });
+  }, 30000);
 });
 
 describe("agnes-video-2.5 / 2.5-flash contract", () => {
@@ -302,7 +308,26 @@ describe("agnes-video-2.5 / 2.5-flash contract", () => {
     expect(body.mode).toBe("text"); // inferred default
   });
 
-  it("rejects v2.0-only fields on 2.5 (width/height/num_frames/…)", () => {
+  it("clamps out-of-range duration into the 4-12s window (regression: 15 was rejected)", () => {
+    // The playground Duration field allows up to 600s; Agnes 2.5 caps at 12.
+    for (const model of [M25, M25F]) {
+      expect(agnes.buildBody(model, { prompt: "x", duration: 15 }).seconds).toBe("12");
+      expect(agnes.buildBody(model, { prompt: "x", seconds: "15" }).seconds).toBe("12");
+      expect(agnes.buildBody(model, { prompt: "x", duration: 600 }).seconds).toBe("12");
+      // Below the floor clamps up.
+      expect(agnes.buildBody(model, { prompt: "x", duration: 1 }).seconds).toBe("4");
+      // In-range values pass through unchanged (string form preserved).
+      expect(agnes.buildBody(model, { prompt: "x", seconds: "8" }).seconds).toBe("8");
+      expect(agnes.buildBody(model, { prompt: "x", duration: 10 }).seconds).toBe("10");
+    }
+  });
+
+  it("rejects a non-numeric duration instead of silently clamping", () => {
+    expect(() => agnes.buildBody(M25, { prompt: "x", duration: "abc" })).toThrow(/seconds must be a number/);
+    expect(() => agnes.buildBody(M25, { prompt: "x", duration: 0 })).toThrow(/seconds must be a number/);
+  });
+
+  it("rejects v2.0-only fields on 2.5 (width/height/num_frames/â€¦)", () => {
     for (const banned of ["width", "height", "num_frames", "frame_rate", "num_inference_steps"]) {
       expect(() => agnes.buildBody(M25, { prompt: "x", [banned]: 1 })).toThrow(/not supported/);
     }
@@ -323,7 +348,7 @@ describe("agnes-video-2.5 / 2.5-flash contract", () => {
     })).toMatchObject({ mode: "reference", images: ["https://c/i.png"] });
   });
 
-  it("Flash: size locked to 720P, ≤5 images, ≤3 audios, no videos", () => {
+  it("Flash: size locked to 720P, â‰¤5 images, â‰¤3 audios, no videos", () => {
     expect(agnes.buildBody(M25F, { prompt: "x", mode: "text" }).size).toBe("720P");
     expect(() => agnes.buildBody(M25F, { prompt: "x", size: "1080P" })).toThrow(/720P/);
     expect(() => agnes.buildBody(M25F, {
@@ -356,7 +381,7 @@ describe("agnes-video-2.5 / 2.5-flash contract", () => {
       model: M25,
     });
     const promise = agnes.parseResponse(create, { headers: HEADERS, model: M25 });
-    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
+    await advancePolls(3);
     const parsed = await promise;
 
     const firstPoll = String(global.fetch.mock.calls[0][0]);

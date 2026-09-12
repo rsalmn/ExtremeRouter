@@ -156,14 +156,21 @@ function resolveSeed(body) {
 
 // ── 2.5 helpers ────────────────────────────────────────────────────────────
 
+// Agnes 2.5 accepts seconds as a string "4"-"12" (docs). The playground
+// Duration field allows much longer values, so clamp into range instead of
+// hard-failing a request the user could reasonably expect to work.
+const SECONDS_25_MIN = 4;
+const SECONDS_25_MAX = 12;
+
 function resolveSeconds25(body) {
   const raw = body.seconds ?? body.duration;
   if (raw === undefined || raw === null || raw === "") return null;
-  const s = String(raw).trim();
-  if (!/^\d+$/.test(s) || Number(s) < 4 || Number(s) > 12) {
-    throw fail(`seconds must be a string "4"-"12" (got '${raw}')`);
+  const n = Number(String(raw).trim());
+  if (!Number.isFinite(n) || n <= 0) {
+    throw fail(`seconds must be a number (got '${raw}')`);
   }
-  return s;
+  const clamped = Math.min(SECONDS_25_MAX, Math.max(SECONDS_25_MIN, Math.round(n)));
+  return String(clamped);
 }
 
 function resolveSize25(body, model) {
@@ -285,6 +292,9 @@ function classifyStatus(raw) {
 // and the resulting 429s starve the loop until the job is already done upstream.
 // 5s keeps us comfortably under the limit for multi-minute renders.
 const AGNES_POLL_INTERVAL_MS = 5000;
+// Exported for tests: the poll cadence must advance against this, not the
+// shared 1.5s image interval.
+export const AGNES_POLL_INTERVAL = AGNES_POLL_INTERVAL_MS;
 // Minimum spacing when the server explicitly rate-limits us.
 const AGNES_MIN_RL_BACKOFF_MS = 10000;
 
@@ -489,8 +499,12 @@ export default {
       // per short window) and 1.5s polling starves the loop with 429s.
       await sleep(AGNES_POLL_INTERVAL_MS);
       attempt += 1;
-      // Prefer the legacy endpoint once we've been rate-limited repeatedly.
-      if (legacyPollUrl && rateLimitHits >= 3 && !useLegacy) useLegacy = true;
+      // Prefer the legacy endpoint once we've been rate-limited repeatedly,
+      // OR when the primary has stayed pending for many attempts (some tasks
+      // only resolve on the task endpoint).
+      if (legacyPollUrl && !useLegacy && (rateLimitHits >= 3 || attempt >= 8)) {
+        useLegacy = true;
+      }
       const pollUrl = useLegacy && legacyPollUrl ? legacyPollUrl : primaryPollUrl;
       const pollResponse = await fetch(pollUrl, { headers });
       if (pollResponse.status === 404 && useLegacy && primaryPollUrl) {
