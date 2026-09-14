@@ -20,7 +20,8 @@ describe("xiaomi-mimo executor", () => {
   });
 
   it("routes Preview models to the account-service route regardless of transport", () => {
-    const expected = "https://mimo-server-cn.xiaomimimo.com/api/route/chat/completions";
+    // Default region is sgp (MIMO_ACCOUNT_REGION overrides).
+    const expected = "https://mimo-server-sgp.xiaomimimo.com/api/route/chat/completions";
     expect(ex.buildUrl("mimo-x-pro-preview", true, 0, OPENAI_T)).toBe(expected);
     expect(ex.buildUrl("mimo-x-pro-preview", true, 0, CLAUDE_T)).toBe(expected);
     // body.model arrives as `xiaomi/<id>` via upstreamModelId

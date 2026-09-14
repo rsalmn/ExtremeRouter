@@ -5,7 +5,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
-const MIMO_REGION = (process.env.MIMO_ACCOUNT_REGION || "cn").toLowerCase();
+// Default to the SGP cluster — that is the region whose /api/route/* endpoint
+// serves the Desktop Preview models. Override with MIMO_ACCOUNT_REGION (e.g.
+// "cn") when a connection belongs to a different cluster. The serviceToken
+// cookie names are derived from this value, so a cluster switch stays coherent.
+const MIMO_REGION = (process.env.MIMO_ACCOUNT_REGION || "sgp").toLowerCase();
 const API_BASE = `https://mimo-server-${MIMO_REGION}.xiaomimimo.com`;
 const ACCOUNT_HOST = "account.xiaomi.com";
 const API_UA =

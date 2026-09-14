@@ -3,7 +3,7 @@ import { CLAUDE_API_HEADERS } from "../shared.js";
 // Dual auth (same pattern as kimi):
 //   - API key (sk-...)      → cloud API on api.xiaomimimo.com
 //   - Desktop account/OAuth → same cloud host, plus the Desktop-exclusive Preview
-//     models served by the account-service route on mimo-server-cn.xiaomimimo.com
+//     models served by the account-service route on mimo-server-sgp.xiaomimimo.com
 //     (authorized by a Xiaomi account session cookie, not the key).
 // Endpoint is picked per model in the executor (see executors/xiaomi-mimo.js).
 export default {
