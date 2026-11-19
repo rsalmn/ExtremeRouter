@@ -539,13 +539,31 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
   // and the stream all share the same sessionId + requestId. Identity travels
   // as request data via handleChatCore → executor.execute — never stored on
   // the singleton executor. Non-OpenCode providers are untouched.
+  //
+  // opencode-go is stricter: the client MUST supply a valid conversation id
+  // (opencode never derives one from the shared connection). An invalid value
+  // is rejected with HTTP 400 BEFORE any credentials fetch or upstream
+  // dispatch — no session is fabricated.
+  const isOpenCodeGo = provider === "opencode-go";
   const opencodeIdentity = provider === "opencode"
     ? resolveOpenCodeIdentity({
         headers: clientRawRequest?.headers || {},
         body,
         connectionId: "noauth",
       })
-    : null;
+    : isOpenCodeGo
+      ? resolveOpenCodeIdentity({
+          headers: clientRawRequest?.headers || {},
+          body,
+          requireClientSession: true,
+        })
+      : null;
+
+  if (isOpenCodeGo && !opencodeIdentity.sessionId) {
+    const errorMsg = "opencode-go requires a valid client x-opencode-session header";
+    log.warn("CHAT", `[${provider}/${model}] ${errorMsg}`);
+    return { success: false, status: HTTP_STATUS.BAD_REQUEST, error: errorMsg, response: errorResponse(HTTP_STATUS.BAD_REQUEST, errorMsg) };
+  }
 
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);

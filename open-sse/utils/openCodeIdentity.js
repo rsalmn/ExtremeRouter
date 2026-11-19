@@ -16,6 +16,7 @@ const SESSION_MAX_LEN = 64; // tail length of canonical ses_<alnum> ids
 const REQUEST_MAX_LEN = 128; // client-provided request ids
 const CLIENT_MAX_LEN = 64;
 const PROJECT_MAX_LEN = 128;
+const USER_AGENT_MAX_LEN = 256;
 const PRE_NORMALIZE_MAX_LEN = 512; // input cap before canonicalization
 
 // Strip control chars + CR/LF (header-injection guard) before length checks.
@@ -87,6 +88,22 @@ function bodyConversationId(body) {
 }
 
 /**
+ * Strict session validation for providers that MUST receive a real client
+ * conversation id (opencode-go). Unlike the permissive path, a malformed value
+ * is rejected outright — never stripped, truncated or replaced with a
+ * generated id — so the caller can return HTTP 400 before dispatch instead of
+ * fabricating/silently colliding a session.
+ */
+function strictClientSessionId(value) {
+  if (typeof value !== "string") return null;
+  // eslint-disable-next-line no-control-regex
+  if (/[\r\n\0-\x1f\x7f]/.test(value)) return null;
+  const v = value.trim();
+  if (!v || v.length > PRE_NORMALIZE_MAX_LEN) return null;
+  return toOpenCodeSessionId(v);
+}
+
+/**
  * Resolve the identity of one logical OpenCode request.
  *
  * sessionId priority:
@@ -105,22 +122,40 @@ function bodyConversationId(body) {
  * the returned object for the whole logical request, so retries, account
  * fallback, alternate transports and streams all reuse the same requestId.
  * clientId/projectId: forwarded only when present.
+ * userAgent: real downstream client UA (bounded, control chars stripped), else
+ * null — callers decide on a truthful fallback.
+ *
+ * requireClientSession: strict mode for opencode-go. A missing/whitespace/
+ * oversized/control-character client x-opencode-session yields sessionId:null
+ * (callers reject with HTTP 400); no session is ever fabricated or derived from
+ * the body/connection.
  *
  * All outputs are bounded and header-safe (no control chars, capped length).
  */
-export function resolveOpenCodeIdentity({ headers = {}, body = {}, connectionId = null } = {}) {
+export function resolveOpenCodeIdentity({ headers = {}, body = {}, connectionId = null, requireClientSession = false } = {}) {
   const requestId =
     normalizeValue(pickHeader(headers, "x-opencode-request"), REQUEST_MAX_LEN) ||
     generateOpenCodeRequestId();
   const clientId = normalizeValue(pickHeader(headers, "x-opencode-client"), CLIENT_MAX_LEN);
   const projectId = normalizeValue(pickHeader(headers, "x-opencode-project"), PROJECT_MAX_LEN);
+  // A User-Agent carrying control characters is not a real downstream UA —
+  // drop it entirely (callers fall back to their truthful wrapper identity)
+  // rather than forward a mangled value.
+  const rawUserAgent = pickHeader(headers, "user-agent");
+  // eslint-disable-next-line no-control-regex
+  const userAgent = typeof rawUserAgent === "string" && !/[\r\n\0-\x1f\x7f]/.test(rawUserAgent)
+    ? normalizeValue(rawUserAgent, USER_AGENT_MAX_LEN)
+    : null;
 
   const clientSession = normalizeValue(
     pickHeader(headers, "x-opencode-session"),
     PRE_NORMALIZE_MAX_LEN
   );
   let sessionId;
-  if (clientSession) {
+  if (requireClientSession) {
+    // Strict: never fabricate a session for a client that must supply one.
+    sessionId = strictClientSessionId(pickHeader(headers, "x-opencode-session"));
+  } else if (clientSession) {
     sessionId = toOpenCodeSessionId(clientSession) || generateOpenCodeSessionId();
   } else if (connectionId && connectionId !== "noauth") {
     sessionId =
@@ -134,5 +169,5 @@ export function resolveOpenCodeIdentity({ headers = {}, body = {}, connectionId 
       : generateOpenCodeSessionId();
   }
 
-  return { sessionId, requestId, clientId, projectId };
+  return { sessionId, requestId, clientId, projectId, userAgent };
 }

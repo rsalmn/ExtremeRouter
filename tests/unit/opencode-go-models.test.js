@@ -81,12 +81,14 @@ describe("OpenCode Go official model catalog", () => {
 });
 
 describe("OpenCode Go endpoint routing", () => {
+  const identity = { sessionId: "ses_test", requestId: "msg_test", userAgent: "test-agent/1.0" };
+
   it("routes Qwen and MiniMax models to the messages endpoint with x-api-key auth", () => {
     const executor = new OpenCodeGoExecutor();
 
     for (const model of MESSAGES_MODELS) {
       expect(executor.buildUrl(model)).toBe("https://opencode.ai/zen/go/v1/messages");
-      const headers = executor.buildHeaders({ apiKey: "sk-test" }, false);
+      const headers = executor.buildHeaders({ apiKey: "sk-test" }, false, model, identity);
       expect(headers["x-api-key"]).toBe("sk-test");
       expect(headers["anthropic-version"]).toBeDefined();
       expect(headers.Authorization).toBeUndefined();
@@ -98,7 +100,7 @@ describe("OpenCode Go endpoint routing", () => {
 
     for (const model of CHAT_MODELS) {
       expect(executor.buildUrl(model)).toBe("https://opencode.ai/zen/go/v1/chat/completions");
-      const headers = executor.buildHeaders({ apiKey: "sk-test" }, false);
+      const headers = executor.buildHeaders({ apiKey: "sk-test" }, false, model, identity);
       expect(headers.Authorization).toBe("Bearer sk-test");
       expect(headers["x-api-key"]).toBeUndefined();
       expect(headers["anthropic-version"]).toBeUndefined();
