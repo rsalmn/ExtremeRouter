@@ -7,7 +7,8 @@
 //
 // Coverage:
 //  - POST route (handleChat/initTranslators mocked): non-OK response is returned
-//    unchanged (status, content-type, body) and is never transformed.
+//    with its status, body and existing headers, plus the endpoint's CORS header
+//    (the transform used to add it), and is never re-encoded as NDJSON.
 //  - transformToOllama directly: non-OK input keeps its status/error body and
 //    emits no `done` line; the 200 SSE happy path still becomes NDJSON.
 // Pure unit test: no DB, no network, no credentials.
@@ -25,11 +26,8 @@ const ERROR_BODY = JSON.stringify({
 });
 const MODEL = "deepseek-v4.1-flash";
 
-function errorResponse(status = 400) {
-  return new Response(ERROR_BODY, {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+function errorResponse(status = 400, headers = { "Content-Type": "application/json" }) {
+  return new Response(ERROR_BODY, { status, headers });
 }
 
 function ollamaRequest() {
@@ -54,6 +52,7 @@ describe("POST /v1/api/chat error passthrough", () => {
     expect(response.status).toBe(400);
     expect(response.ok).toBe(false);
     expect(response.headers.get("content-type")).toBe("application/json");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
     expect(text).toBe(ERROR_BODY);
     expect(text).not.toContain('"done":true');
   });
@@ -64,6 +63,7 @@ describe("POST /v1/api/chat error passthrough", () => {
     const response = await POST(ollamaRequest());
 
     expect(response.status).toBe(403);
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
     expect(await response.text()).toBe(ERROR_BODY);
   });
 
@@ -73,6 +73,25 @@ describe("POST /v1/api/chat error passthrough", () => {
     const response = await POST(ollamaRequest());
 
     expect(response.status).toBe(503);
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(await response.text()).toBe(ERROR_BODY);
+  });
+
+  it("keeps Retry-After/rate-limit headers while adding CORS on a 429", async () => {
+    handleChat.mockResolvedValue(
+      errorResponse(429, {
+        "Content-Type": "application/json",
+        "Retry-After": "30",
+        "X-RateLimit-Remaining": "0",
+      })
+    );
+
+    const response = await POST(ollamaRequest());
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("30");
+    expect(response.headers.get("x-ratelimit-remaining")).toBe("0");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
     expect(await response.text()).toBe(ERROR_BODY);
   });
 });
@@ -84,6 +103,7 @@ describe("transformToOllama non-OK passthrough", () => {
 
     expect(response.status).toBe(400);
     expect(response.headers.get("content-type")).toBe("application/json");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
     expect(text).toBe(ERROR_BODY);
     expect(text).not.toContain('"done"');
   });
