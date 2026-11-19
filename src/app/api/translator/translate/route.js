@@ -5,6 +5,7 @@ import { FORMATS } from "open-sse/translator/formats.js";
 import { getModelInfo } from "@/sse/services/model.js";
 import { getProviderConnections } from "@/lib/localDb.js";
 import { getExecutor } from "open-sse/executors/index.js";
+import { resolveOpenCodeIdentity } from "open-sse/utils/openCodeIdentity.js";
 
 export async function POST(request) {
   try {
@@ -73,8 +74,19 @@ export async function POST(request) {
         };
 
         const executor = getExecutor(provider);
+        // opencode-go's executor requires a request-scoped identity (the same
+        // strict gate as the /v1 serving path). This preview has no client
+        // conversation id, so use the permissive resolver path (stable per
+        // connection) to keep the debug tool working.
+        const opencodeIdentity = provider === "opencode-go"
+          ? resolveOpenCodeIdentity({
+              headers: Object.fromEntries(request.headers.entries()),
+              body: openaiBody,
+              connectionId: connection.id,
+            })
+          : null;
         const url = executor.buildUrl(model, stream, 0, credentials);
-        const headers = executor.buildHeaders(credentials, stream);
+        const headers = executor.buildHeaders(credentials, stream, model, opencodeIdentity);
         const finalBody = executor.transformRequest(model, translated, stream, credentials);
 
         return NextResponse.json({ success: true, result: { url, headers, body: finalBody } });

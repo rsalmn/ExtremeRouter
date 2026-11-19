@@ -1,5 +1,6 @@
 import { getProviderConnections, updateProviderConnection } from "@/lib/localDb.js";
 import { getExecutor } from "open-sse/index.js";
+import { resolveOpenCodeIdentity } from "open-sse/utils/openCodeIdentity.js";
 
 async function persistRefreshedCredentials(connection, newCredentials) {
   const updateData = {};
@@ -62,7 +63,18 @@ export async function POST(request) {
     const executor = getExecutor(provider);
     const stream = body.stream !== false;
 
-    let { response } = await executor.execute({ model, body, stream, credentials });
+    // opencode-go's executor requires a request-scoped identity. This internal
+    // debug tool has no client conversation id, so use the permissive resolver
+    // path (stable per connection). The strict /v1 serving path stays strict.
+    const opencodeIdentity = provider === "opencode-go"
+      ? resolveOpenCodeIdentity({
+          headers: Object.fromEntries(request.headers.entries()),
+          body,
+          connectionId: connection.id,
+        })
+      : null;
+
+    let { response } = await executor.execute({ model, body, stream, credentials, opencodeIdentity });
 
     // Auto-refresh token on 401/403 and retry (same as chatCore.js)
     if (response.status === 401 || response.status === 403) {
@@ -70,7 +82,7 @@ export async function POST(request) {
       if (newCredentials?.accessToken || newCredentials?.copilotToken) {
         Object.assign(credentials, newCredentials);
         await persistRefreshedCredentials(connection, newCredentials);
-        ({ response } = await executor.execute({ model, body, stream, credentials }));
+        ({ response } = await executor.execute({ model, body, stream, credentials, opencodeIdentity }));
       }
     }
 

@@ -33,6 +33,10 @@ const MESSAGES_FORMAT_MODELS = new Set([
 
 const BASE = "https://opencode.ai/zen/go/v1";
 
+// Truthful wrapper identity when the downstream client sends no User-Agent.
+// Never claim to be the opencode CLI — this gateway is a separate hop.
+const FALLBACK_USER_AGENT = "ExtremeRouter";
+
 // Effort-tier aliases — models on opencode-go that support per-effort suffixes.
 // Each entry maps the canonical base id to the set of effort tiers the upstream
 // supports. parseEffortLevel() parses the suffix (e.g. "glm-5.2-high" →
@@ -74,6 +78,16 @@ export function parseEffortLevel(model) {
 // Strip the thinking suffix "model(level)" so checks hit the base id.
 function baseModelId(model) {
   return String(model || "").replace(/\([^()]+\)\s*$/, "").trim();
+}
+
+// Canonical model for the auth/endpoint check. Effort-tier aliases map to
+// their base id; a thinking suffix like "(high)" is stripped. The execute()
+// model argument is authoritative — `_lastModel` is only a fallback for
+// legacy direct buildUrl → buildHeaders callers (never used to encode
+// request identity, which is request-scoped via `opencodeIdentity`).
+function canonicalModelId(model) {
+  if (!model) return null;
+  return parseEffortLevel(model)?.baseModel || baseModelId(model);
 }
 
 function isResponsesModel(model) {
@@ -154,24 +168,41 @@ export class OpenCodeGoExecutor extends BaseExecutor {
   buildUrl(model) {
     // Muse Spark lives on /responses even when a stale runtimeTransport leaks in.
     if (isResponsesModel(model)) return RESPONSES_BASE_URL;
-    const parsed = parseEffortLevel(model);
-    const canonical = parsed ? parsed.baseModel : model;
+    const canonical = canonicalModelId(model);
     this._lastModel = canonical;
     return MESSAGES_FORMAT_MODELS.has(canonical)
       ? `${BASE}/messages`
       : `${BASE}/chat/completions`;
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, model = null, opencodeIdentity = null) {
     const key = credentials?.apiKey || credentials?.accessToken;
     const headers = { "Content-Type": "application/json" };
 
-    if (MESSAGES_FORMAT_MODELS.has(this._lastModel)) {
+    const canonical = canonicalModelId(model) || this._lastModel;
+    if (MESSAGES_FORMAT_MODELS.has(canonical)) {
       headers["x-api-key"] = key;
       headers["anthropic-version"] = ANTHROPIC_API_VERSION;
     } else {
       headers["Authorization"] = `Bearer ${key}`;
     }
+
+    // opencode-go requires a real client conversation id. Never fabricate one:
+    // a missing/invalid session is a client error (HTTP 400) raised before any
+    // upstream dispatch. The identity object is request-scoped data passed in
+    // by chat.js — it is never cached on this singleton executor.
+    const id = opencodeIdentity || {};
+    if (!id.sessionId) {
+      const err = new Error("opencode-go requires a valid client x-opencode-session header");
+      err.code = "OPENCODE_SESSION_REQUIRED";
+      err.status = 400;
+      throw err;
+    }
+    headers["x-opencode-session"] = id.sessionId;
+    if (id.requestId) headers["x-opencode-request"] = id.requestId;
+    // Forward the downstream client UA only when it really exists; otherwise
+    // identify this wrapper truthfully. Never impersonate "opencode".
+    headers["User-Agent"] = id.userAgent || FALLBACK_USER_AGENT;
 
     if (stream) headers["Accept"] = "text/event-stream";
     return headers;

@@ -16,6 +16,7 @@ const SESSION_MAX_LEN = 64; // tail length of canonical ses_<alnum> ids
 const REQUEST_MAX_LEN = 128; // client-provided request ids
 const CLIENT_MAX_LEN = 64;
 const PROJECT_MAX_LEN = 128;
+const USER_AGENT_MAX_LEN = 256;
 const PRE_NORMALIZE_MAX_LEN = 512; // input cap before canonicalization
 
 // Strip control chars + CR/LF (header-injection guard) before length checks.
@@ -57,19 +58,30 @@ export function generateOpenCodeSessionId() {
 }
 
 /**
- * Canonicalize any session candidate into the upstream's ses_<alnum> shape:
- * strip repeated ses_ prefixes and dashes (official ids are dash-less), drop
- * characters outside [A-Za-z0-9], cap the tail. Returns null when nothing
- * usable remains — callers fall back to a generated id (a garbage client
- * value must never become a shared/upstream session).
+ * Canonical (pre-truncation) session tail: strip repeated ses_ prefixes and
+ * dashes (official ids are dash-less), drop characters outside [A-Za-z0-9_],
+ * then strip leading underscores so the tail starts with an alnum char.
+ * Returns null when nothing usable remains.
  */
-export function toOpenCodeSessionId(value) {
+function canonicalSessionTail(value) {
   const v = normalizeValue(value, PRE_NORMALIZE_MAX_LEN);
   if (!v) return null;
-  let rest = v.replace(/^(?:ses_)+/i, "").replace(/-/g, "");
-  // Keep the canonical underscore separator, drop everything else, then strip
-  // any leading underscores so the tail starts with an alnum char.
-  rest = rest.replace(/[^A-Za-z0-9_]/g, "").replace(/^_+/, "");
+  const rest = v
+    .replace(/^(?:ses_)+/i, "")
+    .replace(/-/g, "")
+    .replace(/[^A-Za-z0-9_]/g, "")
+    .replace(/^_+/, "");
+  return rest || null;
+}
+
+/**
+ * Canonicalize any session candidate into the upstream's ses_<alnum> shape,
+ * capping the tail. Returns null when nothing usable remains — callers fall
+ * back to a generated id (a garbage client value must never become a
+ * shared/upstream session).
+ */
+export function toOpenCodeSessionId(value) {
+  const rest = canonicalSessionTail(value);
   if (!rest) return null;
   return `ses_${rest.slice(0, SESSION_MAX_LEN)}`;
 }
@@ -84,6 +96,26 @@ function bodyConversationId(body) {
     body.prompt_cache_key ||
     null
   );
+}
+
+/**
+ * Strict session validation for providers that MUST receive a real client
+ * conversation id (opencode-go). Unlike the permissive path, a malformed value
+ * is rejected outright — never stripped, truncated or replaced with a
+ * generated id — so the caller can return HTTP 400 before dispatch instead of
+ * fabricating/silently colliding a session.
+ */
+function strictClientSessionId(value) {
+  if (typeof value !== "string") return null;
+  // eslint-disable-next-line no-control-regex
+  if (/[\r\n\0-\x1f\x7f]/.test(value)) return null;
+  const v = value.trim();
+  if (!v || v.length > PRE_NORMALIZE_MAX_LEN) return null;
+  const tail = canonicalSessionTail(v);
+  // Reject instead of truncating: a lossy conversion would map two distinct
+  // client sessions to the same upstream session id.
+  if (!tail || tail.length > SESSION_MAX_LEN) return null;
+  return `ses_${tail}`;
 }
 
 /**
@@ -105,22 +137,40 @@ function bodyConversationId(body) {
  * the returned object for the whole logical request, so retries, account
  * fallback, alternate transports and streams all reuse the same requestId.
  * clientId/projectId: forwarded only when present.
+ * userAgent: real downstream client UA (bounded, control chars stripped), else
+ * null — callers decide on a truthful fallback.
+ *
+ * requireClientSession: strict mode for opencode-go. A missing/whitespace/
+ * oversized/control-character client x-opencode-session yields sessionId:null
+ * (callers reject with HTTP 400); no session is ever fabricated or derived from
+ * the body/connection.
  *
  * All outputs are bounded and header-safe (no control chars, capped length).
  */
-export function resolveOpenCodeIdentity({ headers = {}, body = {}, connectionId = null } = {}) {
+export function resolveOpenCodeIdentity({ headers = {}, body = {}, connectionId = null, requireClientSession = false } = {}) {
   const requestId =
     normalizeValue(pickHeader(headers, "x-opencode-request"), REQUEST_MAX_LEN) ||
     generateOpenCodeRequestId();
   const clientId = normalizeValue(pickHeader(headers, "x-opencode-client"), CLIENT_MAX_LEN);
   const projectId = normalizeValue(pickHeader(headers, "x-opencode-project"), PROJECT_MAX_LEN);
+  // A User-Agent carrying control characters is not a real downstream UA —
+  // drop it entirely (callers fall back to their truthful wrapper identity)
+  // rather than forward a mangled value.
+  const rawUserAgent = pickHeader(headers, "user-agent");
+  // eslint-disable-next-line no-control-regex
+  const userAgent = typeof rawUserAgent === "string" && !/[\r\n\0-\x1f\x7f]/.test(rawUserAgent)
+    ? normalizeValue(rawUserAgent, USER_AGENT_MAX_LEN)
+    : null;
 
   const clientSession = normalizeValue(
     pickHeader(headers, "x-opencode-session"),
     PRE_NORMALIZE_MAX_LEN
   );
   let sessionId;
-  if (clientSession) {
+  if (requireClientSession) {
+    // Strict: never fabricate a session for a client that must supply one.
+    sessionId = strictClientSessionId(pickHeader(headers, "x-opencode-session"));
+  } else if (clientSession) {
     sessionId = toOpenCodeSessionId(clientSession) || generateOpenCodeSessionId();
   } else if (connectionId && connectionId !== "noauth") {
     sessionId =
@@ -134,5 +184,5 @@ export function resolveOpenCodeIdentity({ headers = {}, body = {}, connectionId 
       : generateOpenCodeSessionId();
   }
 
-  return { sessionId, requestId, clientId, projectId };
+  return { sessionId, requestId, clientId, projectId, userAgent };
 }
