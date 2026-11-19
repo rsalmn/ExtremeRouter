@@ -58,19 +58,30 @@ export function generateOpenCodeSessionId() {
 }
 
 /**
- * Canonicalize any session candidate into the upstream's ses_<alnum> shape:
- * strip repeated ses_ prefixes and dashes (official ids are dash-less), drop
- * characters outside [A-Za-z0-9], cap the tail. Returns null when nothing
- * usable remains — callers fall back to a generated id (a garbage client
- * value must never become a shared/upstream session).
+ * Canonical (pre-truncation) session tail: strip repeated ses_ prefixes and
+ * dashes (official ids are dash-less), drop characters outside [A-Za-z0-9_],
+ * then strip leading underscores so the tail starts with an alnum char.
+ * Returns null when nothing usable remains.
  */
-export function toOpenCodeSessionId(value) {
+function canonicalSessionTail(value) {
   const v = normalizeValue(value, PRE_NORMALIZE_MAX_LEN);
   if (!v) return null;
-  let rest = v.replace(/^(?:ses_)+/i, "").replace(/-/g, "");
-  // Keep the canonical underscore separator, drop everything else, then strip
-  // any leading underscores so the tail starts with an alnum char.
-  rest = rest.replace(/[^A-Za-z0-9_]/g, "").replace(/^_+/, "");
+  const rest = v
+    .replace(/^(?:ses_)+/i, "")
+    .replace(/-/g, "")
+    .replace(/[^A-Za-z0-9_]/g, "")
+    .replace(/^_+/, "");
+  return rest || null;
+}
+
+/**
+ * Canonicalize any session candidate into the upstream's ses_<alnum> shape,
+ * capping the tail. Returns null when nothing usable remains — callers fall
+ * back to a generated id (a garbage client value must never become a
+ * shared/upstream session).
+ */
+export function toOpenCodeSessionId(value) {
+  const rest = canonicalSessionTail(value);
   if (!rest) return null;
   return `ses_${rest.slice(0, SESSION_MAX_LEN)}`;
 }
@@ -100,7 +111,11 @@ function strictClientSessionId(value) {
   if (/[\r\n\0-\x1f\x7f]/.test(value)) return null;
   const v = value.trim();
   if (!v || v.length > PRE_NORMALIZE_MAX_LEN) return null;
-  return toOpenCodeSessionId(v);
+  const tail = canonicalSessionTail(v);
+  // Reject instead of truncating: a lossy conversion would map two distinct
+  // client sessions to the same upstream session id.
+  if (!tail || tail.length > SESSION_MAX_LEN) return null;
+  return `ses_${tail}`;
 }
 
 /**

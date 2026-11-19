@@ -52,6 +52,19 @@ describe("opencode-go strict session resolution", () => {
     expect(a.sessionId).not.toBe(b.sessionId);
   });
 
+  it("accepts a canonical tail of exactly the 64-character cap", () => {
+    const tail = "a".repeat(64);
+    expect(identityFrom({ "x-opencode-session": `ses_${tail}` }).sessionId).toBe(`ses_${tail}`);
+  });
+
+  it("rejects oversized canonical tails instead of truncating them into one session", () => {
+    const capped = "a".repeat(64);
+    const endsWithB = identityFrom({ "x-opencode-session": `ses_${capped}b` });
+    const endsWithC = identityFrom({ "x-opencode-session": `ses_${capped}c` });
+    expect(endsWithB.sessionId).toBeNull();
+    expect(endsWithC.sessionId).toBeNull();
+  });
+
   it("forwards the same session upstream across two turns; request ids stay per-turn", async () => {
     const executor = new OpenCodeGoExecutor();
     const headers = { "x-opencode-session": "ses_conv-two-turns" };
