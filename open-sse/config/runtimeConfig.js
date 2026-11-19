@@ -14,6 +14,13 @@ export const HTTP_STATUS = {
   GATEWAY_TIMEOUT: 504
 };
 
+// Shared response MIME types and CORS policy (no hardcoded literals in routes/handlers).
+export const CONTENT_TYPE = {
+  JSON: "application/json",
+  NDJSON: "application/x-ndjson"
+};
+export const CORS_ANY_ORIGIN = "*";
+
 // Re-export error config (backward compat)
 export { ERROR_TYPES, DEFAULT_ERROR_MESSAGES, BACKOFF_CONFIG, COOLDOWN_MS } from "./errorConfig.js";
 

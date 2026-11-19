@@ -1,5 +1,20 @@
+import { CONTENT_TYPE, CORS_ANY_ORIGIN } from "../config/runtimeConfig.js";
+
 // Transform OpenAI SSE stream to Ollama JSON lines format
 export function transformToOllama(response, model) {
+  // Never turn an upstream error into a successful NDJSON stream. Preserve the
+  // original status and OpenAI-style error body so clients see the real failure.
+  if (!response.ok) {
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: {
+        "Content-Type": response.headers.get("content-type") || CONTENT_TYPE.JSON,
+        "Access-Control-Allow-Origin": CORS_ANY_ORIGIN
+      }
+    });
+  }
+
   let buffer = "";
   let pendingToolCalls = {};
   
@@ -76,10 +91,10 @@ export function transformToOllama(response, model) {
   });
 
   if (!response.body) {
-    return new Response("", { status: response.status, headers: { "Content-Type": "application/x-ndjson" } });
+    return new Response("", { status: response.status, headers: { "Content-Type": CONTENT_TYPE.NDJSON } });
   }
   return new Response(response.body.pipeThrough(transform), {
-    headers: { "Content-Type": "application/x-ndjson", "Access-Control-Allow-Origin": "*" }
+    headers: { "Content-Type": CONTENT_TYPE.NDJSON, "Access-Control-Allow-Origin": CORS_ANY_ORIGIN }
   });
 }
 
