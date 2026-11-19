@@ -1,5 +1,18 @@
 // Transform OpenAI SSE stream to Ollama JSON lines format
 export function transformToOllama(response, model) {
+  // Never turn an upstream error into a successful NDJSON stream. Preserve the
+  // original status and OpenAI-style error body so clients see the real failure.
+  if (!response.ok) {
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: {
+        "Content-Type": response.headers.get("content-type") || "application/json",
+        "Access-Control-Allow-Origin": "*"
+      }
+    });
+  }
+
   let buffer = "";
   let pendingToolCalls = {};
   

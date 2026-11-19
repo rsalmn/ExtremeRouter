@@ -32,6 +32,9 @@ export async function POST(request) {
   } catch {}
 
   const response = await handleChat(request);
+  // Pass upstream errors through untouched. Translating a non-OK response would
+  // mask its real status/body as a 200 NDJSON stream ending in `done:true`.
+  if (!response.ok) return response;
   return transformToOllama(response, modelName);
 }
 
